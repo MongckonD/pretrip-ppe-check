@@ -24,7 +24,8 @@ npm run dev               # http://localhost:5173
 > ทางเลือก: รัน Supabase ในเครื่องด้วย Docker Desktop — `npx supabase init` แล้ว `npx supabase start`
 > ระบบจะรัน migration ในโฟลเดอร์ `supabase/migrations` ให้เอง และพิมพ์ URL / anon key ออกมา
 1. สร้างโปรเจกต์ที่ <https://supabase.com/dashboard>
-2. เปิด **SQL Editor** → วางไฟล์ `supabase/migrations/20261103000000_init.sql` ทั้งไฟล์ → **Run**
+2. เปิด **SQL Editor** → รันไฟล์ใน `supabase/migrations/` **ตามลำดับชื่อไฟล์**:
+   `20261103000000_init.sql` (ตาราง) แล้ว `20261103010000_daily_views.sql` (view รายวัน)
    (หรือใช้ Supabase CLI: `supabase link` แล้ว `supabase db push`)
 3. **Authentication → Users → Add user** สร้างบัญชีให้ทีม (อีเมล + รหัสผ่าน)
 4. **Project Settings → API** คัดลอก `Project URL` และ `anon public key`
@@ -63,6 +64,15 @@ vehicles  (ทะเบียนรถ master)
 
 **Views สำหรับรายงาน** (แถวเดียวต่อการตรวจ เหมือนชีต Admin BI):
 `v_vehicle_inspection_summary`, `v_ppe_inspection_summary` — ใช้ต่อกับ Power BI / Looker Studio ได้ผ่าน Postgres connection
+
+**Views รายวัน** (แท็บ "รายวัน" ใช้ชุดนี้ — รวมรถ/คนที่ **ยังไม่ได้ตรวจ** ด้วย):
+| View | 1 แถว = | ใช้ดู |
+|---|---|---|
+| `v_daily_vehicle_status` | รถ 1 คัน / 1 วัน | สถานะ 0 ยังไม่ตรวจ · 1 ผ่าน · 2 ไม่ผ่าน, ข้อที่ไม่ผ่าน, สถานะรูป |
+| `v_daily_ppe_status` | พนักงาน 1 คน / 1 วัน | ยังไม่ตรวจ · ครบ · ไม่ครบ · อุปกรณ์ไม่ครบ, อุปกรณ์ที่ขาด |
+| `v_daily_summary` | 1 วัน | จำนวนรถตรวจแล้ว/ทั้งหมด, ไม่ผ่าน, รูปครบ, PPE ตรวจแล้ว/ครบ |
+
+"ที่ต้องตรวจ" = รถ/พนักงานที่ active + รายการที่มีบันทึกจริงในวันนั้น · ช่วงวัน = วันแรกที่มีบันทึก ถึงวันนี้
 
 **Functions:** `save_vehicle_inspection(...)`, `save_ppe_inspections(...)` บันทึกหัว + รายละเอียดใน transaction เดียว
 

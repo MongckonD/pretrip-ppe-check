@@ -5,6 +5,7 @@
  */
 import { supabase, PHOTO_BUCKET } from './supabase';
 import type {
+  DailyPpeStatus, DailySummary, DailyVehicleStatus,
   Employee, Master, PpeForm, PpeInspection, Vehicle, VehicleForm, VehicleInspection,
 } from './types';
 import { monthRange } from './utils';
@@ -115,4 +116,16 @@ export async function savePpeInspections(f: PpeForm) {
 
 export async function deletePpeInspection(id: string) {
   check(await supabase.from('ppe_inspections').delete().eq('id', id));
+}
+
+/* ---------- daily status ---------- */
+export async function listDailyVehicleStatus(date: string) {
+  return (check(await supabase.from('v_daily_vehicle_status').select('*').eq('day', date).order('plate')) ?? []) as DailyVehicleStatus[];
+}
+export async function listDailyPpeStatus(date: string) {
+  return (check(await supabase.from('v_daily_ppe_status').select('*').eq('day', date).order('employee_id')) ?? []) as DailyPpeStatus[];
+}
+export async function listDailySummary(month: string) {
+  const { from, to } = monthRange(month);
+  return (check(await supabase.from('v_daily_summary').select('*').gte('day', from).lte('day', to).order('day')) ?? []) as DailySummary[];
 }

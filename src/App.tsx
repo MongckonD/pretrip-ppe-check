@@ -8,6 +8,7 @@ import { Login } from './components/Login';
 import { MasterContext, buildMasterCtx } from './components/MasterContext';
 import { VehiclePage } from './pages/VehiclePage';
 import { PpePage } from './pages/PpePage';
+import { DailyPage } from './pages/DailyPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DataPage } from './pages/DataPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -15,6 +16,7 @@ import { SettingsPage } from './pages/SettingsPage';
 const TABS = [
   ['veh', 'ตรวจรถ'],
   ['ppe', 'PPE'],
+  ['day', 'รายวัน'],
   ['dash', 'ภาพรวม'],
   ['data', 'ข้อมูล'],
   ['cfg', 'ตั้งค่า'],
@@ -99,6 +101,7 @@ function Shell({ email }: { email: string }) {
           <MasterContext.Provider value={ctx}>
             {tab === 'veh' && <VehiclePage />}
             {tab === 'ppe' && <PpePage />}
+            {tab === 'day' && <DailyPage />}
             {tab === 'dash' && <DashboardPage month={month} setMonth={setMonth} />}
             {tab === 'data' && <DataPage month={month} setMonth={setMonth} />}
             {tab === 'cfg' && <SettingsPage />}
