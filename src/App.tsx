@@ -8,7 +8,6 @@ import { Login } from './components/Login';
 import { MasterContext, buildMasterCtx } from './components/MasterContext';
 import { VehiclePage } from './pages/VehiclePage';
 import { PpePage } from './pages/PpePage';
-import { DailyPage } from './pages/DailyPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DataPage } from './pages/DataPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -16,7 +15,6 @@ import { SettingsPage } from './pages/SettingsPage';
 const TABS = [
   ['veh', 'ตรวจรถ'],
   ['ppe', 'PPE'],
-  ['day', 'รายวัน'],
   ['dash', 'ภาพรวม'],
   ['data', 'ข้อมูล'],
   ['cfg', 'ตั้งค่า'],
@@ -42,7 +40,12 @@ function AuthGate() {
 }
 
 function Shell({ email }: { email: string }) {
-  const [tab, setTab] = useState<Tab>(() => (sessionStorage.getItem('tab') as Tab) || 'veh');
+  const [tab, setTab] = useState<Tab>(() => {
+    let saved: string | null = null;
+    try { saved = sessionStorage.getItem('tab'); } catch { /* storage unavailable */ }
+    // a remembered tab may no longer exist (e.g. after a tab was removed)
+    return TABS.some(([k]) => k === saved) ? (saved as Tab) : 'veh';
+  });
   const [month, setMonth] = useState(today().slice(0, 7));
   const [master, setMaster] = useState<Master | null>(null);
   const [error, setError] = useState('');
@@ -101,7 +104,6 @@ function Shell({ email }: { email: string }) {
           <MasterContext.Provider value={ctx}>
             {tab === 'veh' && <VehiclePage />}
             {tab === 'ppe' && <PpePage />}
-            {tab === 'day' && <DailyPage />}
             {tab === 'dash' && <DashboardPage month={month} setMonth={setMonth} />}
             {tab === 'data' && <DataPage month={month} setMonth={setMonth} />}
             {tab === 'cfg' && <SettingsPage />}

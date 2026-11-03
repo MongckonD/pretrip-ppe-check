@@ -4,11 +4,10 @@
  * supabase/migrations so the UI behaves the same once the real backend is switched on.
  */
 import type {
-  DailyPpeStatus, DailySummary, DailyVehicleStatus,
   Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult,
 } from './types';
 import { CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS } from './seed';
-import { daysInMonth, monthRange, pad2, photoStatus, today } from './utils';
+import { monthRange, pad2, photoStatus, today } from './utils';
 
 /* ---------- row shapes (= the tables) ---------- */
 interface VehRow {
@@ -277,76 +276,4 @@ export async function deletePpeInspection(id: string) {
   const db = load();
   db.ppe = db.ppe.filter((r) => r.id !== id);
   persist();
-}
-
-/* ---------- daily status (= v_daily_* views) ---------- */
-/** Days the views cover: first recorded day … today. */
-function coveredDay(day: string) {
-  const db = load();
-  const t = today();
-  const first = [...db.veh.map((r) => r.inspect_date), ...db.ppe.map((r) => r.inspect_date)]
-    .reduce((a, b) => (b < a ? b : a), t);
-  return day >= first && day <= t;
-}
-
-function vehStatusFor(day: string): DailyVehicleStatus[] {
-  if (!coveredDay(day)) return [];
-  const db = load();
-  const registered = new Set(db.vehicles.map((v) => v.plate));
-  const rows = db.veh.filter((r) => r.inspect_date === day);
-  const plates = new Set([...db.vehicles.filter((v) => v.active).map((v) => v.plate), ...rows.map((r) => r.plate)]);
-  return [...plates].sort().map((plate) => {
-    const r = rows.find((x) => x.plate === plate);
-    const s = r && vehSummary(r);
-    return {
-      day, plate, registered: registered.has(plate),
-      inspection_id: s?.id ?? null, inspect_time: s?.inspect_time ?? null, dman_id: s?.dman_id ?? null,
-      filled_count: s?.filled_count ?? 0, fail_count: s?.fail_count ?? 0,
-      photo_count: s?.photo_count ?? 0, photo_status: s?.photo_status ?? 0,
-      fail_items: s ? Object.entries(s.results).filter(([, v]) => v === 2).map(([k]) => Number(k)).sort((a, b) => a - b) : [],
-      status: !s ? 0 : s.fail_count ? 2 : 1,
-    };
-  });
-}
-
-function ppeStatusFor(day: string): DailyPpeStatus[] {
-  if (!coveredDay(day)) return [];
-  const db = load();
-  const rows = db.ppe.filter((r) => r.inspect_date === day);
-  const ids = new Set([...db.employees.filter((e) => e.active).map((e) => e.id), ...rows.map((r) => r.employee_id)]);
-  return [...ids].sort().map((employee_id) => {
-    const r = rows.find((x) => x.employee_id === employee_id);
-    const s = r && ppeSummary(r);
-    return {
-      day, employee_id, ppe_inspection_id: s?.id ?? null, inspector_id: s?.inspector_id ?? null, plate: s?.plate ?? null,
-      missing_count: s?.missing_count ?? 0,
-      missing_items: s ? Object.entries(s.results).filter(([, v]) => v === 2).map(([k]) => k).sort() : [],
-      status: s?.status ?? 'ยังไม่ตรวจ',
-    };
-  });
-}
-
-export async function listDailyVehicleStatus(date: string) {
-  await tick();
-  return vehStatusFor(date);
-}
-export async function listDailyPpeStatus(date: string) {
-  await tick();
-  return ppeStatusFor(date);
-}
-export async function listDailySummary(month: string): Promise<DailySummary[]> {
-  await tick();
-  return daysInMonth(month).filter(coveredDay).map((day) => {
-    const v = vehStatusFor(day), p = ppeStatusFor(day);
-    return {
-      day,
-      vehicles_total: v.length,
-      vehicles_checked: v.filter((x) => x.status > 0).length,
-      vehicles_failed: v.filter((x) => x.status === 2).length,
-      vehicles_photo_complete: v.filter((x) => x.photo_status === 1).length,
-      ppe_total: p.length,
-      ppe_checked: p.filter((x) => x.status !== 'ยังไม่ตรวจ').length,
-      ppe_complete: p.filter((x) => x.status === 'ครบ').length,
-    };
-  });
 }

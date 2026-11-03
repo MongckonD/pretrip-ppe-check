@@ -149,18 +149,6 @@ textarea { resize: vertical; min-height: 64px; }
 .pill.p { background: var(--pass-bg); color: var(--pass); }
 .pill.f { background: var(--fail-bg); color: var(--fail); }
 .pill.x { background: var(--na-bg); color: var(--na); }
-.pill.w { background: transparent; color: var(--fail); border: 1px dashed var(--fail); padding: 1px 8px; }
-
-/* ---------- daily status ---------- */
-.day-nav { gap: 6px; flex-wrap: nowrap; }
-.day-nav input { width: auto; }
-.status-row { padding-left: 12px; box-shadow: inset 3px 0 0 var(--line); }
-.status-row.s0 { box-shadow: inset 3px 0 0 var(--fail); }
-.status-row.s2 { box-shadow: inset 3px 0 0 var(--brand); }
-.status-row.s1 { box-shadow: inset 3px 0 0 var(--pass); }
-.emp.status-row:first-of-type { padding-top: 12px; }
-.fail-list { font-size: 13px; color: var(--fail); font-weight: 600; }
-td.bad { color: var(--fail); font-weight: 700; }
 
 /* ---------- photos ---------- */
 .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }

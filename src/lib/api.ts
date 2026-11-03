@@ -17,7 +17,6 @@ export const {
   listVehicleInspections, saveVehicleInspection, deleteVehicleInspection,
   uploadPhoto, removePhotos, signedUrls,
   listPpeInspections, savePpeInspections, deletePpeInspection,
-  listDailyVehicleStatus, listDailyPpeStatus, listDailySummary,
 } = api;
 
 export const resetDemo = mock.resetDemo;

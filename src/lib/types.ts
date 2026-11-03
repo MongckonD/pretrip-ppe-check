@@ -55,47 +55,6 @@ export interface PpeInspection {
   status: 'ครบ' | 'ไม่ครบ' | 'อุปกรณ์ไม่ครบ';
 }
 
-/** Row of v_daily_vehicle_status — every active vehicle per day, checked or not */
-export interface DailyVehicleStatus {
-  day: string;
-  plate: string;
-  registered: boolean;
-  inspection_id: string | null;
-  inspect_time: string | null;
-  dman_id: string | null;
-  filled_count: number;
-  fail_count: number;
-  photo_count: number;
-  photo_status: 0 | 1 | 2;
-  fail_items: number[];
-  /** 0 = ยังไม่ตรวจ, 1 = ผ่าน, 2 = ไม่ผ่าน */
-  status: 0 | 1 | 2;
-}
-
-/** Row of v_daily_ppe_status — every active employee per day, checked or not */
-export interface DailyPpeStatus {
-  day: string;
-  employee_id: string;
-  ppe_inspection_id: string | null;
-  inspector_id: string | null;
-  plate: string | null;
-  missing_count: number;
-  missing_items: string[];
-  status: 'ยังไม่ตรวจ' | PpeInspection['status'];
-}
-
-/** Row of v_daily_summary */
-export interface DailySummary {
-  day: string;
-  vehicles_total: number;
-  vehicles_checked: number;
-  vehicles_failed: number;
-  vehicles_photo_complete: number;
-  ppe_total: number;
-  ppe_checked: number;
-  ppe_complete: number;
-}
-
 export interface VehicleForm {
   id: string | null;
   date: string;
