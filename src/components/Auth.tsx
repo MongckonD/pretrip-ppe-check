@@ -14,7 +14,8 @@ function Card(props: { title: string; sub?: string; children: ReactNode }) {
       <div className="panel login">
         <div className="brand-mark" aria-hidden="true" />
         <div>
-          <div className="eyebrow dark">Piyachart 54 · Daily Safety</div>
+          <div className="brand-name">D-Trip</div>
+          <div className="brand-sub">Delivery Team App</div>
           <h1>{props.title}</h1>
         </div>
         {props.sub && <p className="note">{props.sub}</p>}
@@ -55,7 +56,7 @@ export function LoginForm({ onDone }: { onDone: (me: Me) => void }) {
   }
 
   return (
-    <Card title="เข้าสู่ระบบ" sub="ตรวจรถก่อนออกงาน และ PPE">
+    <Card title="เข้าสู่ระบบ">
       <form className="login-form" onSubmit={submit}>
         <label>ชื่อผู้ใช้ (id_user)
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"

@@ -147,7 +147,7 @@ function Shell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
         <header className="mbar">
           <div className="brand">
             <span className="brand-mark sm" aria-hidden="true" />
-            <span className="brand-text"><span className="eyebrow">Piyachart 54</span><b>Pre-Trip & PPE</b></span>
+            <span className="brand-text"><b className="brand-name">D-Trip</b><span className="brand-sub">Delivery Team App</span></span>
           </div>
           <div className="mbar-user">{userBox}</div>
         </header>
@@ -157,8 +157,8 @@ function Shell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
           <div className="brand side-brand">
             <span className="brand-mark sm" aria-hidden="true" />
             <span className="brand-text">
-              <span className="eyebrow">Piyachart 54</span>
-              <b>ตรวจรถก่อนออกงาน และ PPE</b>
+              <b className="brand-name">D-Trip</b>
+              <span className="brand-sub">Delivery Team App</span>
             </span>
           </div>
           <nav className="nav" role="tablist" aria-label="เมนูหลัก" aria-orientation="vertical">
