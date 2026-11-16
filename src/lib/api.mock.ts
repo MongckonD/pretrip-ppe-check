@@ -1,12 +1,12 @@
 /**
- * Test-mode implementation: same functions as api.supabase.ts, but data lives in this browser
- * (rows in localStorage, photos in IndexedDB). It mirrors the SQL views and save functions in
- * supabase/migrations so the UI behaves the same once the real backend is switched on.
+ * Test-mode implementation: data lives in this browser (rows in localStorage, photos in IndexedDB).
+ * The future Cloudflare backend (api.cloudflare.ts → Worker → D1/R2, see cloudflare/) must expose
+ * the same functions so the UI does not change when the real backend is switched on.
  */
 import type {
   Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult,
 } from './types';
-import { CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS } from './seed';
+import { CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS, ROLES } from './seed';
 import { monthRange, pad2, photoStatus, today } from './utils';
 
 /* ---------- row shapes (= the tables) ---------- */
@@ -138,7 +138,7 @@ export async function loadMaster(): Promise<Master> {
   return {
     employees: [...db.employees].sort((a, b) => a.id.localeCompare(b.id)),
     vehicles: [...db.vehicles].sort((a, b) => a.plate.localeCompare(b.plate)),
-    checkItems: CHECK_ITEMS, ppeItems: PPE_ITEMS, photoSlots: PHOTO_SLOTS,
+    checkItems: CHECK_ITEMS, ppeItems: PPE_ITEMS, photoSlots: PHOTO_SLOTS, roles: ROLES,
   };
 }
 

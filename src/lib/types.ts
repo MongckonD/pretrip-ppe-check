@@ -15,6 +15,8 @@ export interface Master {
   checkItems: CheckItem[];
   ppeItems: PpeItem[];
   photoSlots: PhotoSlot[];
+  /** ตำแหน่งที่เลือกได้ (ตาราง employee_roles) */
+  roles: string[];
 }
 
 /** Row of v_vehicle_inspection_summary */

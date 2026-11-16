@@ -5,3 +5,9 @@ dist
 *.local
 
 .vercel
+
+# Cloudflare local state
+.wrangler
+
+# Local-only Worker secrets/vars (dev login bypass)
+.dev.vars

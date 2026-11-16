@@ -1,6 +1,6 @@
 import type { CheckItem, PhotoSlot, PpeItem } from './types';
 
-/** Same rows as the seed section of supabase/migrations/*_init.sql */
+/** Same rows as cloudflare/migrations/0003_seed.sql */
 export const CHECK_ITEMS: CheckItem[] = ([
   ['ยางรถยนต์', 'ยางทุกล้อไม่แบน บวม หรือแตกร้าว'],
   ['ล้อและนอตล้อ', 'นอตครบ ไม่พบรอยหลวม/ชำรุด'],
@@ -33,6 +33,9 @@ export const PPE_ITEMS: PpeItem[] = [
   { code: 'gloves', name: 'ถุงมือ', sort_order: 3, active: true },
   { code: 'mask', name: 'หน้ากากอนามัย', sort_order: 4, active: true },
 ];
+
+/** Same as employee_roles in cloudflare/migrations/0003_seed.sql */
+export const ROLES = ['D-Man', 'Helper', 'ธุรการ', 'อื่น ๆ'];
 
 export const PHOTO_SLOTS: PhotoSlot[] = [
   { code: 'front', name: 'หน้า', sort_order: 1 },

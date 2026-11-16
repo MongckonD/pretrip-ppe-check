@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useMe } from '../components/Auth';
 import { useMaster } from '../components/MasterContext';
+import { UsersPanel } from '../components/UsersPanel';
 import { ConfirmDelete } from '../components/Fields';
 import { useToast } from '../components/Toast';
 import { deleteVehicle, isTestMode, resetDemo, upsertEmployee, upsertVehicle } from '../lib/api';
@@ -20,24 +22,40 @@ function ConfirmAction(props: { label: string; confirm: string; onConfirm: () =>
 
 export function SettingsPage() {
   const master = useMaster();
+  const me = useMe();
   const toast = useToast();
   const [emps, setEmps] = useState<Employee[]>(master.employees);
-  const [vehs, setVehs] = useState<Vehicle[]>(master.vehicles);
+  const [vehs, setVehs] = useState<Vehicle[]>(() => master.vehicles.filter((v) => v.active));
   const [newPlate, setNewPlate] = useState('');
   const [newType, setNewType] = useState('');
 
-  useEffect(() => setEmps(master.employees), [master.employees]);
-  useEffect(() => setVehs(master.vehicles), [master.vehicles]);
+  // rows the user is editing but has not saved yet: a reload from the server must not wipe what they typed
+  const dirtyEmp = useRef(new Set<string>());
+  const dirtyVeh = useRef(new Set<string>());
+
+  useEffect(() => setEmps((prev) => master.employees.map((m) =>
+    dirtyEmp.current.has(m.id) ? prev.find((p) => p.id === m.id) ?? m : m)), [master.employees]);
+  // รถที่ลบแล้วแต่มีประวัติ ระบบจะปิดใช้งานไว้แทน จึงไม่แสดงในรายการ (เพิ่มทะเบียนเดิมใหม่ = เปิดใช้งานคืน)
+  useEffect(() => setVehs((prev) => master.vehicles.filter((v) => v.active).map((m) =>
+    dirtyVeh.current.has(m.id) ? prev.find((p) => p.id === m.id) ?? m : m)), [master.vehicles]);
 
   async function run(fn: () => Promise<void>, ok = 'บันทึกแล้ว') {
     try { await fn(); await master.reload(); toast(ok); }
     catch (e) { toast('บันทึกไม่สำเร็จ: ' + errMsg(e)); }
   }
 
-  const editEmp = (i: number, patch: Partial<Employee>) =>
+  const editEmp = (i: number, patch: Partial<Employee>) => {
+    dirtyEmp.current.add(emps[i].id);
     setEmps((l) => l.map((e, j) => (j === i ? { ...e, ...patch } : e)));
+  };
+  /** Save the whole row (name + role + active) as it is on screen. */
+  const saveEmpRow = (e: Employee) => {
+    dirtyEmp.current.delete(e.id);
+    run(() => upsertEmployee(e));
+  };
   const saveEmp = (i: number) => {
     const e = emps[i];
+    dirtyEmp.current.delete(e.id);
     const orig = master.employees.find((x) => x.id === e.id);
     if (orig && orig.name === e.name && orig.role === e.role) return;
     run(() => upsertEmployee(e));
@@ -49,10 +67,13 @@ export function SettingsPage() {
     run(() => upsertEmployee({ id, name: '', role: '', active: true }), `เพิ่ม ${id} แล้ว`);
   }
 
-  const editVeh = (i: number, patch: Partial<Vehicle>) =>
+  const editVeh = (i: number, patch: Partial<Vehicle>) => {
+    dirtyVeh.current.add(vehs[i].id);
     setVehs((l) => l.map((v, j) => (j === i ? { ...v, ...patch } : v)));
+  };
   const saveVeh = (i: number) => {
     const v = vehs[i];
+    dirtyVeh.current.delete(v.id);
     const orig = master.vehicles.find((x) => x.id === v.id);
     if (!v.plate.trim()) return toast('ทะเบียนว่างไม่ได้');
     if (orig && orig.plate === v.plate && orig.type === v.type) return;
@@ -76,10 +97,19 @@ export function SettingsPage() {
             <span className="mono code">{e.id}</span>
             <input aria-label="ชื่อ" placeholder="ชื่อ-นามสกุล" value={e.name}
               onChange={(ev) => editEmp(i, { name: ev.target.value })} onBlur={() => saveEmp(i)} />
-            <input aria-label="ตำแหน่ง" placeholder="ตำแหน่ง" value={e.role}
-              onChange={(ev) => editEmp(i, { role: ev.target.value })} onBlur={() => saveEmp(i)} />
+            <select aria-label="ตำแหน่ง" value={e.role}
+              onChange={(ev) => {
+                const role = ev.target.value;
+                setEmps((l) => l.map((x, j) => (j === i ? { ...x, role } : x)));
+                saveEmpRow({ ...e, role });
+              }}>
+              <option value="">ไม่ระบุตำแหน่ง</option>
+              {[...master.roles, ...(e.role && !master.roles.includes(e.role) ? [e.role] : [])].map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
             <button className={`btn sm ${e.active ? 'on' : 'ghost'}`}
-              onClick={() => run(() => upsertEmployee({ ...e, active: !e.active }))}>
+              onClick={() => saveEmpRow({ ...e, active: !e.active })}>
               {e.active ? 'ใช้งาน' : 'ปิดอยู่'}
             </button>
           </div>
@@ -105,15 +135,16 @@ export function SettingsPage() {
           <button className="btn sm" onClick={addVeh}>เพิ่ม</button>
         </div>
         <p className="note">รหัส: 1 = ผ่าน/มี, 2 = ไม่ผ่าน/ไม่มี, 3 = ไม่เกี่ยวข้อง (ใช้กับรถเท่านั้น)</p>
-        {!isTestMode && <p className="note">ข้อมูลเก็บใน Supabase (PostgreSQL) และใช้ร่วมกันทุกเครื่อง</p>}
+        {!isTestMode && <p className="note">ข้อมูลเก็บใน Cloudflare D1 และใช้ร่วมกันทุกเครื่อง</p>}
       </section>
+
+      {me?.role === 'admin' && <UsersPanel />}
 
       {isTestMode && (
         <section className="panel test-panel">
           <h2>โหมดทดสอบ</h2>
           <p className="note">
-            ตอนนี้ยังไม่ได้เชื่อม Supabase ข้อมูลทั้งหมดเก็บในเบราว์เซอร์นี้เท่านั้น (รูปถ่ายเก็บใน IndexedDB)
-            เมื่อใส่ค่าใน <code>.env</code> แอปจะสลับไปใช้ฐานข้อมูลจริงเอง
+            ตอนนี้ยังไม่ได้เชื่อม Cloudflare ข้อมูลทั้งหมดเก็บในเบราว์เซอร์นี้เท่านั้น (รูปถ่ายเก็บใน IndexedDB)
           </p>
           <div className="row">
             <ConfirmAction label="สร้างข้อมูลตัวอย่างใหม่" confirm="ยืนยัน ล้างแล้วสร้างใหม่"

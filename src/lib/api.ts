@@ -1,16 +1,15 @@
 /**
- * Data layer switch.
- * - มี .env (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY) → ใช้ Supabase จริง (api.supabase.ts)
- * - ไม่มี .env → โหมดทดสอบ เก็บข้อมูลในเบราว์เซอร์ (api.mock.ts)
+ * Data layer switch (เลือกตอน build ด้วยตัวแปร VITE_BACKEND)
+ * - VITE_BACKEND=cloudflare → Worker API + D1 + R2 (api.cloudflare.ts) — ใช้ตอน deploy (ดู .env.production)
+ * - อื่น ๆ / ไม่ตั้ง        → โหมดทดสอบ เก็บข้อมูลในเบราว์เซอร์ (api.mock.ts) — ค่าเริ่มต้นของ npm run dev
  * ทั้งสองไฟล์มีฟังก์ชันชุดเดียวกัน หน้าจอจึงไม่ต้องรู้ว่าใช้แบบไหน
  */
-import { isConfigured } from './supabase';
-import * as remote from './api.supabase';
+import * as cloud from './api.cloudflare';
 import * as mock from './api.mock';
 
-export const isTestMode = !isConfigured;
+export const isTestMode = import.meta.env.VITE_BACKEND !== 'cloudflare';
 
-const api: typeof remote = isConfigured ? remote : mock;
+const api = isTestMode ? mock : cloud;
 
 export const {
   loadMaster, upsertEmployee, upsertVehicle, deleteVehicle,
@@ -20,3 +19,10 @@ export const {
 } = api;
 
 export const resetDemo = mock.resetDemo;
+
+// login & user administration exist only with the real backend
+export const {
+  authStatus, login, setupAdmin, logout, changePassword,
+  listUsers, createUser, updateUser, resetUserPassword, UNAUTHORIZED_EVENT,
+} = cloud;
+export type { AppUser, Me, Role } from './api.cloudflare';

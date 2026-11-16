@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "web-cloudflare",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:cf", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
     }
   ]
 }

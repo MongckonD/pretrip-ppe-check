@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_SUPABASE_URL?: string;
-  readonly VITE_SUPABASE_ANON_KEY?: string;
+  /** 'cloudflare' = ใช้ Worker API จริง, อย่างอื่น = โหมดทดสอบ */
+  readonly VITE_BACKEND?: string;
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv;

@@ -4,5 +4,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   // polling: the native file watcher sometimes misses edits on Windows, leaving the page stale
-  server: { port: 5173, host: true, watch: { usePolling: true, interval: 300 } },
+  // /api goes to the local Worker (npm run dev:api) when running `npm run dev:cf`
+  server: {
+    port: 5173, host: true, watch: { usePolling: true, interval: 300 },
+    proxy: { '/api': 'http://127.0.0.1:8787' },
+  },
 });
