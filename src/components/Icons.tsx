@@ -61,3 +61,10 @@ export const LogoutIcon = () => (
     <path d="m16 17 5-5-5-5M21 12H9" />
   </Svg>
 );
+
+export const ClockIcon = () => (
+  <Svg>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </Svg>
+);

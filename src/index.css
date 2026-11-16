@@ -339,3 +339,17 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .users-panel { grid-column: 1 / -1; }
 .add-user { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
 .mt-s { margin-top: 8px; }
+
+/* ---------- nav labels: short version on the tablet rail and phone bottom bar ---------- */
+.nav-short { display: none; }
+@media (max-width: 1023px) {
+  .nav-full { display: none; }
+  .nav-short { display: inline; }
+}
+
+/* ---------- placeholder page ---------- */
+.coming-soon { display: grid; justify-items: center; text-align: center; gap: 6px; padding-block: 48px; }
+.coming-soon h2 { margin: 6px 0 0; }
+.coming-soon p { margin: 0; }
+.coming-icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); }
+.coming-icon .ico { width: 30px; height: 30px; }

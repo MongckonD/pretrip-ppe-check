@@ -3,17 +3,19 @@ import { UNAUTHORIZED_EVENT, authStatus, isTestMode, loadMaster, logout, type Me
 import type { Master } from './lib/types';
 import { errMsg, today } from './lib/utils';
 import { ChangePasswordForm, LoginForm, MeContext, ROLE_LABEL, SetupForm } from './components/Auth';
-import { ChartIcon, GearIcon, KeyIcon, LogoutIcon, TableIcon, TruckIcon, VestIcon } from './components/Icons';
+import { ChartIcon, ClockIcon, GearIcon, KeyIcon, LogoutIcon, TableIcon, TruckIcon, VestIcon } from './components/Icons';
 import { MasterContext, buildMasterCtx } from './components/MasterContext';
 import { VehiclePage } from './pages/VehiclePage';
 import { PpePage } from './pages/PpePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DataPage } from './pages/DataPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { TimeActivitiesPage } from './pages/TimeActivitiesPage';
 
 const TABS = [
   ['veh', 'ตรวจรถ'],
   ['ppe', 'PPE'],
+  ['time', 'Time activities'],
   ['dash', 'ภาพรวม'],
   ['data', 'ข้อมูล'],
   ['cfg', 'ตั้งค่า'],
@@ -21,10 +23,13 @@ const TABS = [
 type Tab = (typeof TABS)[number][0];
 
 const TAB_ICON: Record<Tab, () => JSX.Element> = {
-  veh: TruckIcon, ppe: VestIcon, dash: ChartIcon, data: TableIcon, cfg: GearIcon,
+  veh: TruckIcon, ppe: VestIcon, time: ClockIcon, dash: ChartIcon, data: TableIcon, cfg: GearIcon,
 };
+/** Shorter labels for the phone bottom bar, where space is tight. */
+const SHORT_LABEL: Partial<Record<Tab, string>> = { time: 'Time' };
+
 const PAGE_TITLE: Record<Tab, string> = {
-  veh: 'ตรวจรถก่อนออกงาน', ppe: 'ตรวจ PPE พนักงาน', dash: 'ภาพรวมประจำเดือน', data: 'ข้อมูลการตรวจ', cfg: 'ตั้งค่าระบบ',
+  veh: 'ตรวจรถก่อนออกงาน', ppe: 'ตรวจ PPE พนักงาน', time: 'Time activities', dash: 'ภาพรวมประจำเดือน', data: 'ข้อมูลการตรวจ', cfg: 'ตั้งค่าระบบ',
 };
 
 export default function App() {
@@ -161,7 +166,7 @@ function Shell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
               const Icon = TAB_ICON[k];
               return (
                 <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)}>
-                  <Icon /><span>{l}</span>
+                  <Icon /><span className="nav-full">{l}</span><span className="nav-short">{SHORT_LABEL[k] ?? l}</span>
                 </button>
               );
             })}
@@ -189,6 +194,7 @@ function Shell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
           <MasterContext.Provider value={ctx}>
             {tab === 'veh' && <VehiclePage />}
             {tab === 'ppe' && <PpePage />}
+            {tab === 'time' && <TimeActivitiesPage />}
             {tab === 'dash' && <DashboardPage month={month} setMonth={setMonth} />}
             {tab === 'data' && <DataPage month={month} setMonth={setMonth} />}
             {tab === 'cfg' && tabs.some(([k]) => k === 'cfg') && <SettingsPage />}
