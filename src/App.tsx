@@ -3,6 +3,7 @@ import { UNAUTHORIZED_EVENT, authStatus, isTestMode, loadMaster, logout, type Me
 import type { Master } from './lib/types';
 import { errMsg, today } from './lib/utils';
 import { ChangePasswordForm, LoginForm, MeContext, ROLE_LABEL, SetupForm } from './components/Auth';
+import { ChartIcon, GearIcon, KeyIcon, LogoutIcon, TableIcon, TruckIcon, VestIcon } from './components/Icons';
 import { MasterContext, buildMasterCtx } from './components/MasterContext';
 import { VehiclePage } from './pages/VehiclePage';
 import { PpePage } from './pages/PpePage';
@@ -18,6 +19,13 @@ const TABS = [
   ['cfg', 'ตั้งค่า'],
 ] as const;
 type Tab = (typeof TABS)[number][0];
+
+const TAB_ICON: Record<Tab, () => JSX.Element> = {
+  veh: TruckIcon, ppe: VestIcon, dash: ChartIcon, data: TableIcon, cfg: GearIcon,
+};
+const PAGE_TITLE: Record<Tab, string> = {
+  veh: 'ตรวจรถก่อนออกงาน', ppe: 'ตรวจ PPE พนักงาน', dash: 'ภาพรวมประจำเดือน', data: 'ข้อมูลการตรวจ', cfg: 'ตั้งค่าระบบ',
+};
 
 export default function App() {
   // test mode: no login, data stays in this browser
@@ -98,38 +106,75 @@ function Shell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
 
   function go(t: Tab) {
     setTab(t);
+    setPwOpen(false);
+    window.scrollTo({ top: 0 });
     try { sessionStorage.setItem('tab', t); } catch { /* storage unavailable */ }
   }
 
+  const togglePw = () => { setPwOpen((o) => !o); setPwDone(false); };
+  const userBox = isTestMode ? (
+    <span className="test-badge" title="ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น ยังไม่ได้เชื่อม Cloudflare">โหมดทดสอบ</span>
+  ) : me && (
+    <>
+      <div className="who" title={`${me.id} · ${ROLE_LABEL[me.role]}`}>
+        <span className="avatar" aria-hidden="true">{(me.display_name || me.id).slice(0, 1).toUpperCase()}</span>
+        <span className="who-text">
+          <b>{me.display_name || me.id}</b>
+          <span>{ROLE_LABEL[me.role]}</span>
+        </span>
+      </div>
+      <div className="who-actions">
+        <button className="icon-btn" onClick={togglePw} aria-label="เปลี่ยนรหัสผ่าน" title="เปลี่ยนรหัสผ่าน">
+          <KeyIcon /><span className="lbl">เปลี่ยนรหัสผ่าน</span>
+        </button>
+        <button className="icon-btn" onClick={onLogout} aria-label="ออกจากระบบ" title="ออกจากระบบ">
+          <LogoutIcon /><span className="lbl">ออกจากระบบ</span>
+        </button>
+      </div>
+    </>
+  );
+  const current = tabs.find(([k]) => k === tab) ?? tabs[0];
+
   return (
     <MeContext.Provider value={me}>
-      <header className="topbar">
-        <div className="wrap topbar-in">
-          <div>
-            <div className="eyebrow">Piyachart 54 · Daily Safety</div>
-            <h1>ตรวจรถก่อนออกงาน และ PPE</h1>
+      <div className="app">
+        {/* phone only: compact bar with brand + user actions */}
+        <header className="mbar">
+          <div className="brand">
+            <span className="brand-mark sm" aria-hidden="true" />
+            <span className="brand-text"><span className="eyebrow">Piyachart 54</span><b>Pre-Trip & PPE</b></span>
           </div>
-          {isTestMode ? (
-            <div className="user">
-              <span className="test-badge" title="ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น ยังไม่ได้เชื่อม Cloudflare">โหมดทดสอบ</span>
-            </div>
-          ) : me && (
-            <div className="user">
-              <span className="user-email" title={`${me.id} · ${ROLE_LABEL[me.role]}`}>{me.display_name || me.id}</span>
-              <button className="btn ghost-inv sm" onClick={() => { setPwOpen((o) => !o); setPwDone(false); }}>เปลี่ยนรหัสผ่าน</button>
-              <button className="btn ghost-inv sm" onClick={onLogout}>ออกจากระบบ</button>
-            </div>
-          )}
-        </div>
-      </header>
-      <nav className="tabs" role="tablist">
-        <div className="wrap tabs-in">
-          {tabs.map(([k, l]) => (
-            <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)}>{l}</button>
-          ))}
-        </div>
-      </nav>
-      <main className="wrap">
+          <div className="mbar-user">{userBox}</div>
+        </header>
+
+        {/* sidebar on desktop / tablet, bottom bar on phone */}
+        <aside className="side">
+          <div className="brand side-brand">
+            <span className="brand-mark sm" aria-hidden="true" />
+            <span className="brand-text">
+              <span className="eyebrow">Piyachart 54</span>
+              <b>ตรวจรถก่อนออกงาน และ PPE</b>
+            </span>
+          </div>
+          <nav className="nav" role="tablist" aria-label="เมนูหลัก" aria-orientation="vertical">
+            {tabs.map(([k, l]) => {
+              const Icon = TAB_ICON[k];
+              return (
+                <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)}>
+                  <Icon /><span>{l}</span>
+                </button>
+              );
+            })}
+          </nav>
+          <div className="side-foot">{userBox}</div>
+        </aside>
+
+        <div className="main-col">
+          <div className="page-head">
+            <h1>{PAGE_TITLE[current[0]]}</h1>
+            <span className="note">{new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+          </div>
+      <main className="content">
         {pwOpen && <ChangePasswordForm onDone={() => { setPwOpen(false); setPwDone(true); }} onCancel={() => setPwOpen(false)} />}
         {pwDone && <div className="panel ok-panel">เปลี่ยนรหัสผ่านแล้ว</div>}
         {error && (
@@ -150,6 +195,8 @@ function Shell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
           </MasterContext.Provider>
         )}
       </main>
+        </div>
+      </div>
     </MeContext.Provider>
   );
 }
