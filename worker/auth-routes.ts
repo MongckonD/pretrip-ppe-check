@@ -1,6 +1,6 @@
 /** Login, logout, first-time setup, password change, and user administration. */
 import {
-  IP_WINDOW_MINUTES, LOCK_MINUTES, MAX_FAILED, authenticate, clearCookie, createSession, isRole,
+  CONSENT_VERSION, IP_WINDOW_MINUTES, LOCK_MINUTES, MAX_FAILED, authenticate, clearCookie, createSession, isRole,
   readCookie, requireRole, sessionCookie, throttleLogin, type Actor, type Role,
 } from './auth';
 import { HttpError, bad, conflict, json, notFound, readJson } from './http';
@@ -37,7 +37,7 @@ function audit(env: Env, actor: string | null, action: string, entity: string, i
 
 const publicUser = (a: Actor) => ({
   id: a.id, display_name: a.display_name, role: a.role, employee_id: a.employee_id,
-  must_change_password: a.must_change_password,
+  must_change_password: a.must_change_password, consented: a.consented, has_license: a.has_license,
 });
 
 /* ---------------------------------------------------------------------
@@ -70,7 +70,7 @@ export async function setup(req: Request, env: Env) {
   if (r.meta.changes !== 1) throw conflict('ระบบตั้งค่าผู้ดูแลไปแล้ว กรุณาเข้าสู่ระบบ');
   const s = await createSession(env, id, req);
   await env.DB.batch([s.stmt, audit(env, id, 'create', 'users', id, { role: 'admin', setup: true })]);
-  return json({ user: { id, display_name: display, role: 'admin', employee_id: null, must_change_password: false } }, 201,
+  return json({ user: { id, display_name: display, role: 'admin', employee_id: null, must_change_password: false, consented: false, has_license: false } }, 201,
     { 'set-cookie': sessionCookie(s.token) });
 }
 
@@ -111,6 +111,10 @@ export async function login(req: Request, env: Env) {
   if (u.active !== 1) throw new HttpError(403, 'บัญชีนี้ถูกปิดการใช้งาน ติดต่อผู้ดูแลระบบ');
 
   const s = await createSession(env, id, req);
+  const onboard = await env.DB.prepare(
+    `SELECT EXISTS (SELECT 1 FROM user_consents WHERE user_id = ?1 AND version = ?2) AS consented,
+            EXISTS (SELECT 1 FROM driver_licenses WHERE user_id = ?1 AND replaced_at IS NULL) AS has_license`,
+  ).bind(id, CONSENT_VERSION).first<{ consented: number; has_license: number }>();
   await env.DB.batch([
     env.DB.prepare(`UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = ${NOW_SQL} WHERE id = ?1`).bind(id),
     env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?1 AND expires_at <= ?2`).bind(id, new Date(now).toISOString()),
@@ -120,7 +124,8 @@ export async function login(req: Request, env: Env) {
   return json({
     user: {
       id, display_name: u.display_name, role: u.role, employee_id: u.employee_id,
-      must_change_password: u.must_change_password === 1,
+      must_change_password: u.must_change_password === 1, consented: onboard?.consented === 1,
+      has_license: onboard?.has_license === 1,
     },
   }, 200, { 'set-cookie': sessionCookie(s.token) });
 }

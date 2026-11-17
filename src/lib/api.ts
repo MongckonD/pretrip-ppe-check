@@ -17,6 +17,7 @@ export const {
   uploadPhoto, removePhotos, signedUrls,
   listPpeInspections, savePpeInspections, deletePpeInspection,
   listTripActivities, saveTripActivity, deleteTripActivity,
+  getMyLicense, saveMyLicense, listLicenses, licensePhotoUrl,
 } = api;
 
 export const resetDemo = mock.resetDemo;
@@ -24,6 +25,6 @@ export const resetDemo = mock.resetDemo;
 // login & user administration exist only with the real backend
 export const {
   authStatus, login, setupAdmin, logout, changePassword,
-  listUsers, createUser, updateUser, resetUserPassword, UNAUTHORIZED_EVENT,
+  listUsers, createUser, updateUser, resetUserPassword, UNAUTHORIZED_EVENT, acceptConsent, keepAlive,
 } = cloud;
 export type { AppUser, Me, Role } from './api.cloudflare';

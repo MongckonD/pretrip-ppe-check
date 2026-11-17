@@ -8,15 +8,23 @@
 import { authenticate } from './auth';
 import * as a from './auth-routes';
 import { HttpError, errorResponse, mapDbError } from './http';
+import * as lic from './license-routes';
 import * as r from './routes';
 import type { Ctx, Env } from './routes';
 import * as trip from './trip-routes';
+
+/**
+ * true  = staff must send a driving-licence photo before using anything else (no skipping)
+ * false = for now: staff may skip to the main page; a reminder shows until they send one
+ * Keep in sync with LICENSE_REQUIRED in src/lib/license.ts.
+ */
+const REQUIRE_LICENSE = false;
 
 type Handler = (c: Ctx) => Promise<Response>;
 type PublicHandler = (req: Request, env: Env, exec: ExecutionContext) => Promise<Response>;
 type Route =
   | { m: string; re: RegExp; pub: PublicHandler }
-  | { m: string; re: RegExp; h: Handler; duringPasswordChange?: boolean };
+  | { m: string; re: RegExp; h: Handler; duringPasswordChange?: boolean; beforeConsent?: boolean; beforeLicense?: boolean };
 
 const ROUTES: Route[] = [
   // no session needed
@@ -26,8 +34,15 @@ const ROUTES: Route[] = [
   { m: 'POST', re: /^\/api\/auth\/logout$/, pub: a.logout },
 
   // signed in (allowed even when the user must change a temporary password)
-  { m: 'GET', re: /^\/api\/me$/, h: a.getMe, duringPasswordChange: true },
-  { m: 'POST', re: /^\/api\/auth\/password$/, h: a.changePassword, duringPasswordChange: true },
+  { m: 'GET', re: /^\/api\/me$/, h: a.getMe, duringPasswordChange: true, beforeConsent: true, beforeLicense: true },
+  { m: 'POST', re: /^\/api\/auth\/password$/, h: a.changePassword, duringPasswordChange: true, beforeConsent: true, beforeLicense: true },
+
+  // personal-data consent and driver licenses
+  { m: 'POST', re: /^\/api\/consent$/, h: lic.acceptConsent, beforeConsent: true, beforeLicense: true },
+  { m: 'GET', re: /^\/api\/me\/license$/, h: lic.getMyLicense, beforeLicense: true },
+  { m: 'POST', re: /^\/api\/me\/license$/, h: lic.saveMyLicense, beforeLicense: true },
+  { m: 'GET', re: /^\/api\/licenses$/, h: lic.listLicenses },
+  { m: 'GET', re: /^\/api\/licenses\/([^/]+)\/photo$/, h: lic.getLicensePhoto, beforeLicense: true },
 
   // user administration (admin)
   { m: 'GET', re: /^\/api\/users$/, h: a.listUsers },
@@ -185,6 +200,14 @@ async function handleApi(req: Request, env: Env, exec: ExecutionContext): Promis
   const actor = await authenticate(req, env, exec);
   if (actor.must_change_password && !route.duringPasswordChange) {
     return errorResponse(403, 'กรุณาเปลี่ยนรหัสผ่านชั่วคราวก่อนใช้งาน');
+  }
+  // staff must accept the personal-data consent before using anything else
+  if (actor.role === 'user' && !actor.consented && !route.beforeConsent) {
+    return errorResponse(403, 'กรุณายอมรับความยินยอมในการใช้ข้อมูลส่วนบุคคลก่อนใช้งาน');
+  }
+  // ... and send a photo of their driving licence (only while REQUIRE_LICENSE is on)
+  if (REQUIRE_LICENSE && actor.role === 'user' && !actor.has_license && !route.beforeLicense) {
+    return errorResponse(403, 'กรุณาถ่ายรูปใบขับขี่และกรอกข้อมูลให้ครบก่อนใช้งาน');
   }
   return route.h({ req, env, exec, url, actor, params });
 }

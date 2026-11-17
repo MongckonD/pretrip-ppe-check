@@ -6,6 +6,7 @@
 import type {
   Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity, TripForm,
 } from './types';
+import { licenseStatus, type DriverLicense, type LicenseForm, type LicenseInfo, type LicenseRow } from './license';
 import { AREA_TYPES, CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS, ROLES } from './seed';
 import { monthRange, pad2, photoStatus, today } from './utils';
 
@@ -343,3 +344,42 @@ export async function deleteTripActivity(id: string) {
   db.trips = db.trips.filter((t) => t.id !== id);
   persist();
 }
+
+/* ---------- driver licence (test mode: one licence for "me" kept in this browser; photo kept in memory) ---------- */
+const LIC_KEY = 'pretrip-mock-license';
+let licPhoto: string | null = null;
+type MockLic = Omit<DriverLicense, 'status' | 'days_left'>;
+function readLic(): MockLic | null {
+  try { const raw = localStorage.getItem(LIC_KEY); return raw ? JSON.parse(raw) as MockLic : null; } catch { return null; }
+}
+const withStatus = (l: MockLic): DriverLicense => ({ ...l, ...licenseStatus(l.expiry_date, l.lifetime, today()) });
+
+export async function getMyLicense(): Promise<LicenseInfo> {
+  await tick();
+  const l = readLic();
+  return { license: l ? withStatus(l) : null, warn_days: 60 };
+}
+export async function saveMyLicense(f: LicenseForm): Promise<LicenseInfo> {
+  await tick();
+  if (licPhoto) URL.revokeObjectURL(licPhoto);
+  licPhoto = URL.createObjectURL(f.photo);
+  const l: MockLic = {
+    id: uuid().replace(/-/g, ''), full_name: f.full_name.trim(), license_no: f.license_no.replace(/[\s-]/g, '').toUpperCase(),
+    expiry_date: f.lifetime ? null : f.expiry_date, lifetime: f.lifetime, submitted_at: new Date().toISOString(), has_photo: true,
+  };
+  try { localStorage.setItem(LIC_KEY, JSON.stringify(l)); } catch { /* memory only */ }
+  return { license: withStatus(l), warn_days: 60 };
+}
+export async function listLicenses(): Promise<{ rows: LicenseRow[]; warn_days: number; today: string }> {
+  await tick();
+  // test mode: the one licence sent from this browser, shown as the first employee's
+  const mine = readLic();
+  const e = load().employees.find((x) => x.active);
+  const rows: LicenseRow[] = [];
+  if (mine && e) {
+    const l = withStatus(mine);
+    rows.push({ user_id: e.id.toLowerCase(), display_name: e.name, employee_id: e.id, employee_name: e.name, license: l, status: l.status });
+  }
+  return { rows, warn_days: 60, today: today() };
+}
+export const licensePhotoUrl = (_id: string) => licPhoto ?? '';

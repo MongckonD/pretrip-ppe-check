@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { UNAUTHORIZED_EVENT, authStatus, logout, type Me } from '../lib/api';
+import { IDLE_NOTICE, NOTICE_KEY, useIdleSignOut } from '../lib/session';
 import { errMsg } from '../lib/utils';
 import { ChangePasswordForm, LoginForm, SetupForm } from './Auth';
 
@@ -17,6 +18,10 @@ type AuthState = { needs_setup: boolean; user: Me | null };
 export function AuthGate({ area, children }: { area: 'staff' | 'admin'; children: (me: Me, signOut: () => void) => ReactNode }) {
   const [state, setState] = useState<AuthState | undefined>(undefined);
   const [error, setError] = useState('');
+  // message on the login screen (e.g. signed out for being idle); survives the admin → / redirect
+  const [notice, setNotice] = useState(() => {
+    try { const n = sessionStorage.getItem(NOTICE_KEY) ?? ''; sessionStorage.removeItem(NOTICE_KEY); return n; } catch { return ''; }
+  });
 
   const check = useCallback(async () => {
     setError('');
@@ -27,7 +32,10 @@ export function AuthGate({ area, children }: { area: 'staff' | 'admin'; children
   useEffect(() => {
     check();
     // any API call that finds the session gone sends the user back to the login screen
-    const onLost = () => setState((s) => (s ? { ...s, user: null } : s));
+    const onLost = () => {
+      setNotice('หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
+      setState((s) => (s ? { ...s, user: null } : s));
+    };
     window.addEventListener(UNAUTHORIZED_EVENT, onLost);
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onLost);
   }, [check]);
@@ -45,13 +53,22 @@ export function AuthGate({ area, children }: { area: 'staff' | 'admin'; children
       window.location.replace(ADMIN_HOME);
       return;
     }
+    setNotice('');
     setState({ needs_setup: false, user });
   };
-  const signOut = async () => {
+  const signOut = async (why = '') => {
     await logout().catch(() => { /* cookie is cleared anyway on next login */ });
-    if (area === 'admin') window.location.replace(STAFF_HOME);
-    else setState({ needs_setup: false, user: null });
+    setNotice(why);
+    if (area === 'admin') {
+      try { if (why) sessionStorage.setItem(NOTICE_KEY, why); } catch { /* ignore */ }
+      window.location.replace(STAFF_HOME);
+    } else {
+      setState({ needs_setup: false, user: null });
+    }
   };
+
+  // both roles: signed out automatically after IDLE_MINUTES without use
+  useIdleSignOut(!!state?.user && !leaveTo, () => { void signOut(IDLE_NOTICE); });
 
   if (error) {
     return (
@@ -66,10 +83,10 @@ export function AuthGate({ area, children }: { area: 'staff' | 'admin'; children
   }
   if (!state || leaveTo) return <div className="center-screen note">กำลังโหลด…</div>;
   if (state.needs_setup) return <SetupForm onDone={signedIn} />;
-  if (!state.user) return <LoginForm onDone={signedIn} />;
+  if (!state.user) return <LoginForm onDone={signedIn} notice={notice} />;
   if (state.user.must_change_password) {
     const u = state.user;
-    return <ChangePasswordForm forced onDone={() => signedIn({ ...u, must_change_password: false })} onLogout={signOut} />;
+    return <ChangePasswordForm forced onDone={() => signedIn({ ...u, must_change_password: false })} onLogout={() => signOut()} />;
   }
-  return <>{children(state.user, signOut)}</>;
+  return <>{children(state.user, () => { void signOut(); })}</>;
 }

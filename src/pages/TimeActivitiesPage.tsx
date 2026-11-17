@@ -85,11 +85,13 @@ export function TimeActivitiesPage() {
           <h2>{f.id ? 'แก้ไขบันทึกก่อนออกงาน' : 'บันทึกก่อนออกงาน'}</h2>
           {f.id && <button className="btn ghost sm" onClick={() => setF(blankForm({ date: f.date }))}>ยกเลิกแก้ไข</button>}
         </div>
-        <div className="grid">
-          <label>วันที่<input type="date" value={f.date} onChange={(e) => set('date', e.target.value)} /></label>
-          <label>เวลาออกงาน<input type="time" value={f.time} onChange={(e) => set('time', e.target.value)} /></label>
-          <label>D-Man<EmployeeSelect value={f.dman} onChange={(v) => set('dman', v)} blank="เลือก D-Man" /></label>
-          <label>ทะเบียนรถ<PlateInput id="t-plate" value={f.plate} onChange={(v) => set('plate', v)} /></label>
+        <div className="form-head">
+          <div className="fields c4">
+            <label>วันที่<input type="date" value={f.date} onChange={(e) => set('date', e.target.value)} /></label>
+            <label>เวลาออกงาน<input type="time" value={f.time} onChange={(e) => set('time', e.target.value)} /></label>
+            <label>ทะเบียนรถ<PlateInput id="t-plate" value={f.plate} onChange={(v) => set('plate', v)} /></label>
+            <label>D-Man<EmployeeSelect value={f.dman} onChange={(v) => set('dman', v)} blank="เลือก D-Man" /></label>
+          </div>
         </div>
 
         <div className="row spread section-head">

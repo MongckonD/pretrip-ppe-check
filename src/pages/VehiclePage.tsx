@@ -137,14 +137,20 @@ export function VehiclePage() {
           <h2>{f.id ? 'แก้ไขการตรวจรถ' : 'ตรวจรถประจำวัน'}</h2>
           {f.id && <button className="btn ghost sm" onClick={() => setF(blankForm({ date: f.date }))}>ยกเลิกแก้ไข</button>}
         </div>
-        <div className="grid">
-          <label>วันที่<input type="date" value={f.date} onChange={(e) => set('date', e.target.value)} /></label>
-          <label>D-Man<EmployeeSelect value={f.dman} onChange={(v) => set('dman', v)} blank="เลือกผู้ตรวจ" exclude={[f.h1, f.h2]} /></label>
-          <label>Helper 1<EmployeeSelect value={f.h1} onChange={(v) => set('h1', v)} blank="ไม่มี" exclude={[f.dman, f.h2]} /></label>
-          <label>Helper 2<EmployeeSelect value={f.h2} onChange={(v) => set('h2', v)} blank="ไม่มี" exclude={[f.dman, f.h1]} /></label>
-          <label>ทะเบียนรถ<PlateInput id="v-plate" value={f.plate} onChange={(v) => set('plate', v)} /></label>
-          <label>เลขไมล์<input inputMode="numeric" value={f.mileage} onChange={(e) => set('mileage', e.target.value)} /></label>
-          <label>เวลาตรวจ<input type="time" value={f.time} onChange={(e) => set('time', e.target.value)} /></label>
+        <div className="form-head">
+          <div className="field-group">ข้อมูลรถ</div>
+          <div className="fields c4">
+            <label>วันที่<input type="date" value={f.date} onChange={(e) => set('date', e.target.value)} /></label>
+            <label>เวลาตรวจ<input type="time" value={f.time} onChange={(e) => set('time', e.target.value)} /></label>
+            <label>ทะเบียนรถ<PlateInput id="v-plate" value={f.plate} onChange={(v) => set('plate', v)} /></label>
+            <label>เลขไมล์<input inputMode="numeric" placeholder="เช่น 125000" value={f.mileage} onChange={(e) => set('mileage', e.target.value)} /></label>
+          </div>
+          <div className="field-group">ทีมงาน</div>
+          <div className="fields c3 team">
+            <label>D-Man<EmployeeSelect value={f.dman} onChange={(v) => set('dman', v)} blank="เลือกผู้ตรวจ" exclude={[f.h1, f.h2]} /></label>
+            <label>Helper 1<EmployeeSelect value={f.h1} onChange={(v) => set('h1', v)} blank="ไม่มี" exclude={[f.dman, f.h2]} /></label>
+            <label>Helper 2<EmployeeSelect value={f.h2} onChange={(v) => set('h2', v)} blank="ไม่มี" exclude={[f.dman, f.h1]} /></label>
+          </div>
         </div>
 
         <div className="row spread section-head">

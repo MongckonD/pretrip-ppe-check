@@ -31,6 +31,8 @@ export interface ShellProps {
   onLogout?: () => void;
   tabs: TabDef[];
   brandSub: string;
+  /** optional notice above every page (e.g. licence reminder); gets the open tab's key */
+  banner?: (go: (key: string) => void, currentKey: string) => ReactNode;
 }
 
 const normPath = (p: string) => (p.toLowerCase().replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/');
@@ -41,7 +43,7 @@ function tabFromUrl(tabs: TabDef[]): TabDef {
   return tabs.find((t) => normPath(t.path) === here) ?? tabs[0];
 }
 
-export function AppShell({ me, onLogout, tabs, brandSub }: ShellProps) {
+export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
   const [tab, setTab] = useState<string>(() => tabFromUrl(tabs).key);
   const [month, setMonth] = useState(today().slice(0, 7));
   const [master, setMaster] = useState<Master | null>(null);
@@ -143,6 +145,7 @@ export function AppShell({ me, onLogout, tabs, brandSub }: ShellProps) {
           <main className="content">
             {pwOpen && <ChangePasswordForm onDone={() => { setPwOpen(false); setPwDone(true); }} onCancel={() => setPwOpen(false)} />}
             {pwDone && <div className="panel ok-panel">เปลี่ยนรหัสผ่านแล้ว</div>}
+            {banner?.(go, current.key)}
             {error && (
               <div className="panel error-panel">
                 <b>เชื่อมต่อฐานข้อมูลไม่สำเร็จ</b>

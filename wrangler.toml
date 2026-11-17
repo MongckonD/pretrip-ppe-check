@@ -34,3 +34,8 @@ migrations_dir = "cloudflare/migrations"
 [[r2_buckets]]
 binding = "PHOTOS"
 bucket_name = "pretrip-inspection-photos"
+
+# ที่เก็บรูปใบขับขี่โดยเฉพาะ (private bucket แยกจากรูปตรวจรถ — D1 ตาราง driver_licenses เก็บแค่ photo_r2_key)
+[[r2_buckets]]
+binding = "LICENSES"
+bucket_name = "pretrip-driver-licenses"

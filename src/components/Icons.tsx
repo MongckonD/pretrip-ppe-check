@@ -1,6 +1,40 @@
 /** Small stroke icons for the navigation (24×24, currentColor). */
 import type { ReactNode } from 'react';
 
+export const CameraIcon = () => (
+  <Svg>
+    <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
+    <circle cx="12" cy="13" r="3.4" />
+  </Svg>
+);
+export const UserIcon = () => (
+  <Svg>
+    <circle cx="12" cy="8.5" r="3.5" />
+    <path d="M5 19.5c1.2-3.3 3.8-5 7-5s5.8 1.7 7 5" />
+  </Svg>
+);
+export const HashIcon = () => (
+  <Svg>
+    <path d="M9 4 7.5 20M16.5 4 15 20M4.5 9h15M4 15h15" />
+  </Svg>
+);
+export const CalendarIcon = () => (
+  <Svg>
+    <rect x="4" y="5.5" width="16" height="14.5" rx="2" />
+    <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" />
+  </Svg>
+);
+
+/** Driver licence card. */
+export const IdCardIcon = () => (
+  <Svg>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <circle cx="8.5" cy="11" r="2" />
+    <path d="M5.5 16c.6-1.4 1.7-2 3-2s2.4.6 3 2" />
+    <path d="M14 10h4M14 13.5h4" />
+  </Svg>
+);
+
 function Svg({ children }: { children: ReactNode }) {
   return (
     <svg className="ico" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"

@@ -9,6 +9,8 @@ import {
 export interface Env {
   DB: D1Database;
   PHOTOS: R2Bucket;
+  /** driver-licence photos only (separate private bucket) */
+  LICENSES: R2Bucket;
   ASSETS: Fetcher;
 }
 

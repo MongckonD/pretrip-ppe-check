@@ -3,6 +3,7 @@
  * Same functions as api.mock.ts so pages do not care which one is active.
  * Login: id_user + password; the Worker sets an HttpOnly session cookie that the browser sends automatically.
  */
+import type { LicenseForm, LicenseInfo, LicenseRow } from './license';
 import type {
   Employee, Master, PpeForm, PpeInspection, TripActivity, TripForm, Vehicle, VehicleForm, VehicleInspection,
 } from './types';
@@ -16,6 +17,10 @@ export interface Me {
   role: Role;
   employee_id: string | null;
   must_change_password: boolean;
+  /** has accepted the current personal-data consent */
+  consented: boolean;
+  /** has a current driver licence on file */
+  has_license: boolean;
 }
 
 export interface AppUser {
@@ -33,10 +38,12 @@ export interface AppUser {
 /** Fired when the server says the session is gone, so the app can show the login screen. */
 export const UNAUTHORIZED_EVENT = 'pretrip:unauthorized';
 
-async function call<T>(method: string, path: string, body?: unknown, raw?: Blob): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, raw?: Blob | FormData): Promise<T> {
   const headers: Record<string, string> = { 'x-requested-with': 'pretrip' };
   let payload: BodyInit | undefined;
-  if (raw) {
+  if (raw instanceof FormData) {
+    payload = raw; // the browser sets the multipart content-type
+  } else if (raw) {
     payload = raw;
     headers['content-type'] = raw.type || 'application/octet-stream';
   } else if (body !== undefined) {
@@ -118,6 +125,29 @@ export async function saveVehicleInspection(f: VehicleForm) {
 export async function deleteVehicleInspection(r: VehicleInspection) {
   await call('DELETE', `/api/vehicle-inspections/${encodeURIComponent(r.id)}`); // server also removes its photos
 }
+
+/** Keep-alive while the user is active: any signed-in request moves the idle deadline forward. */
+export async function keepAlive() {
+  await call('GET', '/api/me');
+}
+
+/* ---------- consent + driver licence ---------- */
+export async function acceptConsent(version: string) {
+  await call('POST', '/api/consent', { version });
+}
+export const getMyLicense = () => call<LicenseInfo>('GET', '/api/me/license');
+export async function saveMyLicense(f: LicenseForm) {
+  const fd = new FormData();
+  fd.set('photo', f.photo, 'license.jpg');
+  fd.set('full_name', f.full_name);
+  fd.set('license_no', f.license_no);
+  fd.set('expiry_date', f.lifetime ? '' : f.expiry_date);
+  fd.set('lifetime', f.lifetime ? '1' : '0');
+  fd.set('ocr_used', f.ocr_used ? '1' : '0');
+  return call<LicenseInfo>('POST', '/api/me/license', undefined, fd);
+}
+export const listLicenses = () => call<{ rows: LicenseRow[]; warn_days: number; today: string }>('GET', '/api/licenses');
+export const licensePhotoUrl = (id: string) => `/api/licenses/${encodeURIComponent(id)}/photo`;
 
 /* ---------- photos ---------- */
 export async function uploadPhoto(blob: Blob, date: string) {

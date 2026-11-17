@@ -111,6 +111,7 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
         <div className="row">
           <button className="btn ghost" onClick={() => go('dash')}>ภาพรวมประจำเดือน</button>
           <button className="btn ghost" onClick={() => go('data')}>ข้อมูลการตรวจ / ดาวน์โหลด CSV</button>
+          <button className="btn ghost" onClick={() => go('lic')}>ใบขับขี่พนักงาน</button>
           <button className="btn ghost" onClick={() => go('cfg')}>ตั้งค่า พนักงาน · รถ · ผู้ใช้</button>
         </div>
       </section>

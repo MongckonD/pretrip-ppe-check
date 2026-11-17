@@ -41,7 +41,7 @@ function PasswordInput(props: { label: string; value: string; onChange: (v: stri
 
 const PW_RULE = 'อย่างน้อย 8 ตัวอักษร และต้องไม่มีชื่อผู้ใช้อยู่ในรหัสผ่าน';
 
-export function LoginForm({ onDone }: { onDone: (me: Me) => void }) {
+export function LoginForm({ onDone, notice }: { onDone: (me: Me) => void; notice?: string }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -58,6 +58,7 @@ export function LoginForm({ onDone }: { onDone: (me: Me) => void }) {
   return (
     <Card title="เข้าสู่ระบบ">
       <form className="login-form" onSubmit={submit}>
+        {notice && <div className="login-notice" role="status">{notice}</div>}
         <label>ชื่อผู้ใช้ (id_user)
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
             autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus required />

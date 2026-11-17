@@ -16,6 +16,10 @@ export interface Actor {
   role: Role;
   employee_id: string | null;
   must_change_password: boolean;
+  /** has accepted the current personal-data consent (CONSENT_VERSION) */
+  consented: boolean;
+  /** has a current driver licence on file (staff must send one before using the app) */
+  has_license: boolean;
   /** SHA-256 of this request's session token (to keep this session on password change) */
   session: string;
 }
@@ -23,11 +27,24 @@ export interface Actor {
 interface AuthEnv { DB: D1Database }
 
 export const COOKIE = '__Host-pt_session';
-export const SESSION_DAYS = 7;            // logged out after 7 days without use
+/**
+ * Idle timeout (both roles): a session ends after this many minutes without any request.
+ * While the app is in use it stays alive (every request — and the page's keep-alive ping — moves the
+ * deadline forward). The cookie has no Max-Age, so closing the browser also ends it.
+ * src/lib/session.ts IDLE_MINUTES must match.
+ */
+export const IDLE_MINUTES = 30;
+/** move the deadline forward at most once a minute (limits D1 writes) */
+const SLIDE_EVERY_MS = 60_000;
 export const MAX_FAILED = 5;              // wrong passwords before the account locks
 export const LOCK_MINUTES = 15;
 export const IP_MAX_ATTEMPTS = 30;        // login attempts per IP per window
 export const IP_WINDOW_MINUTES = 15;
+/**
+ * Version of the personal-data consent text (src/lib/consent.ts CONSENT.version must match).
+ * Change both when the wording changes: every user is asked to accept again.
+ */
+export const CONSENT_VERSION = '2026-11-17';
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -41,8 +58,9 @@ export function readCookie(req: Request, name = COOKIE): string | null {
   return null;
 }
 
-export function sessionCookie(token: string, maxAgeSec = SESSION_DAYS * 86400): string {
-  return `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSec}`;
+/** Browser-session cookie (no Max-Age / Expires): the browser drops it when it is closed. */
+export function sessionCookie(token: string): string {
+  return `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax`;
 }
 export const clearCookie = () => `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 
@@ -53,18 +71,21 @@ export async function createSession(env: AuthEnv, userId: string, req: Request) 
   const ua = (req.headers.get('user-agent') ?? '').slice(0, 200);
   const stmt = env.DB.prepare(
     `INSERT INTO sessions (token_hash, user_id, expires_at, user_agent) VALUES (?1, ?2, ?3, ?4)`,
-  ).bind(hash, userId, iso(Date.now() + SESSION_DAYS * 86400_000), ua);
+  ).bind(hash, userId, iso(Date.now() + IDLE_MINUTES * 60_000), ua);
   return { token, hash, stmt };
 }
 
 interface SessionRow {
   user_id: string; expires_at: string; last_seen_at: string;
   display_name: string; role: Role; active: number; employee_id: string | null; must_change_password: number;
+  consented: number;
+  has_license: number;
 }
 
 /**
  * Resolve the signed-in user, or throw 401.
- * Expired sessions are rejected; active sessions slide forward at most once per hour (few writes).
+ * Sessions idle longer than IDLE_MINUTES are rejected; each request slides the deadline forward
+ * (written at most once a minute).
  */
 export async function authenticate(req: Request, env: AuthEnv, exec?: ExecutionContext): Promise<Actor> {
   const token = readCookie(req);
@@ -72,22 +93,28 @@ export async function authenticate(req: Request, env: AuthEnv, exec?: ExecutionC
   const hash = await sha256Hex(token);
   const row = await env.DB.prepare(
     `SELECT s.user_id, s.expires_at, s.last_seen_at,
-            u.display_name, u.role, u.active, u.employee_id, u.must_change_password
+            u.display_name, u.role, u.active, u.employee_id, u.must_change_password,
+            EXISTS (SELECT 1 FROM user_consents c WHERE c.user_id = s.user_id AND c.version = ?2) AS consented,
+            EXISTS (SELECT 1 FROM driver_licenses d WHERE d.user_id = s.user_id AND d.replaced_at IS NULL) AS has_license
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ?1`,
-  ).bind(hash).first<SessionRow>();
+  ).bind(hash, CONSENT_VERSION).first<SessionRow>();
   const now = Date.now();
-  if (!row || Date.parse(row.expires_at) <= now) throw new HttpError(401, 'หมดเวลาการเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่');
+  // idle check on last_seen_at too, so sessions made under an older, longer rule also end on time
+  if (!row || Date.parse(row.expires_at) <= now || now - Date.parse(row.last_seen_at) > IDLE_MINUTES * 60_000) {
+    throw new HttpError(401, 'ไม่ได้ใช้งานนานเกินไป ระบบออกจากระบบให้อัตโนมัติ กรุณาเข้าสู่ระบบใหม่');
+  }
   if (row.active !== 1) throw new HttpError(401, 'บัญชีนี้ถูกปิดการใช้งาน');
 
-  if (now - Date.parse(row.last_seen_at) > 3600_000) {
+  if (now - Date.parse(row.last_seen_at) > SLIDE_EVERY_MS) {
     const slide = env.DB.prepare(`UPDATE sessions SET last_seen_at = ?2, expires_at = ?3 WHERE token_hash = ?1`)
-      .bind(hash, iso(now), iso(now + SESSION_DAYS * 86400_000)).run();
+      .bind(hash, iso(now), iso(now + IDLE_MINUTES * 60_000)).run();
     if (exec) exec.waitUntil(slide); else await slide;
   }
   return {
     id: row.user_id, display_name: row.display_name, role: row.role, employee_id: row.employee_id,
-    must_change_password: row.must_change_password === 1, session: hash,
+    must_change_password: row.must_change_password === 1, consented: row.consented === 1,
+    has_license: row.has_license === 1, session: hash,
   };
 }
 

@@ -72,10 +72,12 @@ export function PpePage() {
     <div className="two">
       <section className="panel">
         <h2>ตรวจ PPE พนักงาน</h2>
-        <div className="grid">
-          <label>วันที่<input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
-          <label>ทะเบียนรถ<PlateInput id="p-plate" value={f.plate} onChange={(v) => setF({ ...f, plate: v })} /></label>
-          <label>ผู้ตรวจ D-Man<EmployeeSelect value={f.inspector} onChange={(v) => setF({ ...f, inspector: v })} blank="เลือกผู้ตรวจ" /></label>
+        <div className="form-head">
+          <div className="fields c3">
+            <label>วันที่<input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
+            <label>ทะเบียนรถ<PlateInput id="p-plate" value={f.plate} onChange={(v) => setF({ ...f, plate: v })} /></label>
+            <label>ผู้ตรวจ D-Man<EmployeeSelect value={f.inspector} onChange={(v) => setF({ ...f, inspector: v })} blank="เลือกผู้ตรวจ" /></label>
+          </div>
         </div>
         <div className="mt">
           {activeEmployees.length ? activeEmployees.map((e) => (

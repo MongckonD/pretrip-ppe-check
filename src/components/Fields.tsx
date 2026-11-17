@@ -29,7 +29,19 @@ export function EmployeeSelect(props: {
   const [text, setText] = useState('');
   const [typing, setTyping] = useState(false);
   const [active, setActive] = useState(0);
+  const [alignRight, setAlignRight] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  /** open the list; near the right edge of the screen it opens leftwards so it never goes off screen */
+  const openList = () => {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (r) {
+      const listW = Math.max(r.width, Math.min(260, window.innerWidth - 32));
+      setAlignRight(r.left + listW > window.innerWidth - 8);
+    }
+    setOpen(true);
+  };
 
   const q = typing ? text.trim().toLowerCase() : '';
   const matches = q ? choices.filter((e) => e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q)) : choices;
@@ -67,7 +79,7 @@ export function EmployeeSelect(props: {
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (!open) { setOpen(true); return; }
+      if (!open) { openList(); return; }
       const n = rows.length;
       if (n) setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
     } else if (e.key === 'Enter') {
@@ -78,7 +90,7 @@ export function EmployeeSelect(props: {
   };
 
   return (
-    <div className="combo">
+    <div className="combo" ref={boxRef}>
       <input
         id={props.id}
         role="combobox"
@@ -89,15 +101,15 @@ export function EmployeeSelect(props: {
         autoComplete="off"
         placeholder={props.blank}
         value={typing ? text : props.value ? labelOf(props.value) : ''}
-        onFocus={(e) => { setOpen(true); setActive(0); e.currentTarget.select(); }}
-        onClick={() => setOpen(true)}
-        onChange={(e) => { setText(e.target.value); setTyping(true); setOpen(true); setActive(0); }}
+        onFocus={(e) => { openList(); setActive(0); e.currentTarget.select(); }}
+        onClick={() => { if (!open) openList(); }}
+        onChange={(e) => { setText(e.target.value); setTyping(true); if (!open) openList(); setActive(0); }}
         onBlur={settle}
         onKeyDown={onKey}
       />
       <span className="combo-caret" aria-hidden="true" />
       {open && (
-        <ul className="combo-list" id={listId} role="listbox" ref={listRef}>
+        <ul className={`combo-list${alignRight ? ' right' : ''}`} id={listId} role="listbox" ref={listRef}>
           {rows.length ? rows.map((r, i) => (
             <li
               key={r.id || '_blank'}
