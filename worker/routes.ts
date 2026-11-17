@@ -1,5 +1,5 @@
 /** API route handlers. Each returns a Response or throws HttpError. */
-import { type Actor, requireRole } from './auth';
+import { type Actor, requireRole, requireStaff } from './auth';
 import { HttpError, bad, conflict, json, notFound, readJson } from './http';
 import {
   PHOTO_KEY_RE, bool, employeeId, inspectDate, isDate, isMonth, monthBounds, obj, optEmployeeId,
@@ -235,7 +235,7 @@ export async function listVehicleInspections({ env, url }: Ctx) {
 }
 
 export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const b = await readJson(req);
   const reqId = b.id === undefined || b.id === null || b.id === '' ? null : str(b.id, 'รหัสบันทึก', 64);
   const date = inspectDate(b.date);
@@ -367,7 +367,7 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
 }
 
 export async function deleteVehicleInspection({ env, actor, params, exec }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const id = decodeURIComponent(params[0]);
   const cur = await env.DB.prepare(
     `SELECT v.id, v.inspect_date, v.approved_at, vh.plate FROM vehicle_inspections v JOIN vehicles vh ON vh.id = v.vehicle_id WHERE v.id = ?1`,
@@ -410,7 +410,7 @@ export async function listPpeInspections({ env, url }: Ctx) {
 }
 
 export async function savePpeInspections({ env, actor, req }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const b = await readJson(req);
   const date = inspectDate(b.date);
   const inspector = employeeId(b.inspector, 'ผู้ตรวจ');
@@ -485,7 +485,7 @@ export async function savePpeInspections({ env, actor, req }: Ctx) {
 }
 
 export async function deletePpeInspection({ env, actor, params }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const id = decodeURIComponent(params[0]);
   const cur = await env.DB.prepare(`SELECT id, inspect_date, employee_id, approved_at FROM ppe_inspections WHERE id = ?1`)
     .bind(id).first<{ id: string; inspect_date: string; employee_id: string; approved_at: string | null }>();
@@ -537,7 +537,7 @@ function sniffImage(b: Uint8Array): string | null {
 }
 
 export async function uploadPhoto({ env, actor, req, url }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const date = reqDate(url.searchParams.get('date'), 'วันที่ของรูป');
   const declared = Number(req.headers.get('content-length') ?? '0');
   if (declared > MAX_PHOTO_BYTES) throw new HttpError(413, 'รูปใหญ่เกิน 5 MB');
@@ -571,7 +571,7 @@ export async function getPhoto({ env, params, req }: Ctx) {
 
 /** Delete photos that are not used by any saved inspection (e.g. replaced before saving). */
 export async function deletePhotos({ env, actor, req }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const b = await readJson(req);
   if (!Array.isArray(b.keys) || b.keys.length > 50) throw bad('keys ต้องเป็นรายการไม่เกิน 50 รายการ');
   const keys = [...new Set(b.keys.map(photoKey))];

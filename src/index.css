@@ -379,3 +379,6 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .tag.on { background: var(--brand-soft); border-color: transparent; color: var(--brand); }
 .tag b { color: var(--brand); margin-left: 2px; }
 @media (max-width: 520px) { .area-grid { grid-template-columns: 1fr 1fr; } .area-chip { font-size: 14px; padding: 8px 10px; } }
+
+/* ---------- admin home ---------- */
+.mini-head { font-weight: 700; font-size: 14px; margin-bottom: 4px; }

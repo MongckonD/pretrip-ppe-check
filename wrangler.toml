@@ -9,8 +9,9 @@ compatibility_date = "2026-11-01"
 [assets]
 directory = "./dist"
 binding = "ASSETS"
-not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+# ทุกคำขอผ่าน Worker ก่อน: Worker เลือกหน้าตามสิทธิ์ (admin → /admin/ เท่านั้น, user → / เท่านั้น)
+not_found_handling = "none"
+run_worker_first = true
 
 # Login: id_user + รหัสผ่าน จัดการโดยแอปเอง (worker/auth.ts) ไม่ใช้ Cloudflare Access
 # ผู้ใช้คนแรก (admin) สร้างจากหน้า "ตั้งค่าครั้งแรก" ตอนที่ยังไม่มีผู้ใช้ในระบบ

@@ -118,4 +118,9 @@ export function requireRole(actor: Actor, min: Role) {
   if (RANK[actor.role] < RANK[min]) throw new HttpError(403, min === 'admin' ? 'เฉพาะผู้ดูแลระบบ (admin) เท่านั้น' : `ต้องมีสิทธิ์ระดับ${ROLE_LABEL[min]}ขึ้นไป`);
 }
 
+/** Staff work (recording / deleting inspections, trips, photos) — role `user` only; admins have their own page. */
+export function requireStaff(actor: Actor) {
+  if (actor.role !== 'user') throw new HttpError(403, 'ส่วนนี้สำหรับพนักงาน (user) เท่านั้น');
+}
+
 export const isRole = (v: unknown): v is Role => typeof v === 'string' && v in RANK;

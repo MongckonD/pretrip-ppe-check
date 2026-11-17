@@ -2,7 +2,7 @@
  * Time activities: before leaving, record the departure time, D-Man and which area types the trip covers.
  * 1 trip = 1 vehicle / 1 day; links automatically to that day's vehicle inspection.
  */
-import { requireRole } from './auth';
+import { requireStaff } from './auth';
 import { bad, json, notFound, readJson } from './http';
 import {
   NOW_SQL, assertEmployeesExist, audit, dateFilter, findVehicleByPlate, parse, type Ctx,
@@ -32,7 +32,7 @@ export async function listTripActivities({ env, url }: Ctx) {
 }
 
 export async function saveTripActivity({ env, actor, req }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const b = await readJson(req);
   const reqId = b.id === undefined || b.id === null || b.id === '' ? null : str(b.id, 'รหัสบันทึก', 64);
   const date = inspectDate(b.date);
@@ -108,7 +108,7 @@ export async function saveTripActivity({ env, actor, req }: Ctx) {
 }
 
 export async function deleteTripActivity({ env, actor, params }: Ctx) {
-  requireRole(actor, 'user');
+  requireStaff(actor);
   const id = decodeURIComponent(params[0]);
   const cur = await env.DB.prepare(
     `SELECT t.id, t.activity_date, v.plate FROM trip_activities t JOIN vehicles v ON v.id = t.vehicle_id WHERE t.id = ?1`,

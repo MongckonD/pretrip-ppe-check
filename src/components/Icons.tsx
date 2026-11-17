@@ -68,3 +68,11 @@ export const ClockIcon = () => (
     <path d="M12 7.5V12l3 2" />
   </Svg>
 );
+
+export const HomeIcon = () => (
+  <Svg>
+    <path d="m3.5 10.5 8.5-7 8.5 7" />
+    <path d="M5.5 9v11h13V9" />
+    <path d="M10 20v-6h4v6" />
+  </Svg>
+);

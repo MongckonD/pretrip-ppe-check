@@ -1,7 +1,8 @@
 /**
  * Pre-Trip PPE Check — Cloudflare Worker
  *   /api/*   JSON API over D1 (data) and R2 (photos); login = id_user + password (session cookie)
- *   others   static web app from ./dist (served by the assets binding)
+ *   pages    staff page (/) or admin page (/admin/), chosen by the signed-in role
+ *   files    static build files from ./dist (js, css, icons)
  * See cloudflare/README.md for the data model and API list.
  */
 import { authenticate } from './auth';
@@ -86,6 +87,75 @@ function isLocalDevPair(origin: string, url: URL): boolean {
   }
 }
 
+/* =====================================================================
+ * Web pages: the server decides which page each person gets, by role.
+ *   admin              → admin page (/admin/) only
+ *   user / signed out  → staff page (/) only — the login screen lives there
+ * Every route goes through the Worker first (wrangler.toml run_worker_first = true),
+ * so no path trick (encoding, case, /index.html, extra slashes) reaches a page directly.
+ * The API checks roles again on every call.
+ * ===================================================================== */
+
+const ADMIN_HOME = '/admin/';
+const STAFF_HOME = '/';
+
+/** True for any spelling of an /admin path (%61dmin, ADMIN, //admin, /admin.html …). */
+function isAdminPath(pathname: string): boolean {
+  let p = pathname;
+  try { p = decodeURIComponent(p); } catch { /* keep raw */ }
+  p = p.toLowerCase().replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  return /^\/admin(?:[/.]|$)/.test(p);
+}
+
+/** Static build files (js, css, icons). Pages (html) never come from here. */
+function isStaticFile(pathname: string): boolean {
+  const last = pathname.slice(pathname.lastIndexOf('/') + 1);
+  return /\.[a-z0-9]+$/i.test(last) && !/\.html?$/i.test(last);
+}
+
+async function signedInRole(req: Request, env: Env, exec: ExecutionContext): Promise<'admin' | 'user' | null> {
+  try {
+    const actor = await authenticate(req, env, exec);
+    // an admin who still has to change a temporary password stays on the staff page's password screen
+    if (actor.must_change_password) return 'user';
+    return actor.role === 'admin' ? 'admin' : 'user';
+  } catch (e) {
+    if (e instanceof HttpError) return null;
+    throw e;
+  }
+}
+
+function redirect(to: string): Response {
+  return withSecurityHeaders(new Response(null, { status: 302, headers: { location: to, 'cache-control': 'no-store' } }));
+}
+
+async function servePage(req: Request, env: Env, exec: ExecutionContext): Promise<Response> {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return withSecurityHeaders(new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD' } }));
+  }
+  const url = new URL(req.url);
+  const role = await signedInRole(req, env, exec);
+  const wantsAdmin = isAdminPath(url.pathname);
+
+  if (role === 'admin' && !wantsAdmin) return redirect(ADMIN_HOME);
+  if (role !== 'admin' && wantsAdmin) return redirect(STAFF_HOME);
+
+  const page = await env.ASSETS.fetch(new Request(new URL(role === 'admin' ? ADMIN_HOME : STAFF_HOME, url.origin), {
+    method: req.method, headers: { accept: 'text/html' },
+  }));
+  const res = withSecurityHeaders(page);
+  res.headers.set('cache-control', 'no-store');
+  res.headers.set('vary', 'cookie');
+  return res;
+}
+
+async function serveStatic(req: Request, env: Env, exec: ExecutionContext): Promise<Response> {
+  const res = await env.ASSETS.fetch(req);
+  // safety net: a static path must never hand out a page
+  if ((res.headers.get('content-type') ?? '').includes('text/html')) return servePage(req, env, exec);
+  return res;
+}
+
 async function handleApi(req: Request, env: Env, exec: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
   const method = req.method === 'HEAD' ? 'GET' : req.method;
@@ -122,7 +192,9 @@ async function handleApi(req: Request, env: Env, exec: ExecutionContext): Promis
 export default {
   async fetch(req: Request, env: Env, exec: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
-    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
+    if (!url.pathname.startsWith('/api/')) {
+      return isStaticFile(url.pathname) ? serveStatic(req, env, exec) : servePage(req, env, exec);
+    }
     try {
       return withSecurityHeaders(await handleApi(req, env, exec));
     } catch (e) {
