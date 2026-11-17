@@ -175,6 +175,25 @@ input, select, textarea {
   border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0;
 }
 textarea { resize: vertical; min-height: 64px; }
+
+/* employee picker you can type into (Fields.tsx EmployeeSelect) */
+.combo { position: relative; min-width: 0; }
+.combo input { padding-right: 32px; text-overflow: ellipsis; }
+.combo-caret {
+  position: absolute; right: 12px; top: 50%; width: 8px; height: 8px; margin-top: -6px; pointer-events: none;
+  border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: rotate(45deg);
+}
+.combo-list {
+  position: absolute; z-index: 30; left: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none;
+  width: max(100%, min(260px, calc(100vw - 32px)));
+  max-height: 260px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12); font-size: 15px; font-weight: 400; color: var(--ink);
+}
+.combo-list li { padding: 9px 10px; border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
+.combo-list li.active { background: var(--brand-soft); color: var(--brand); }
+.combo-list li[aria-selected='true'] { font-weight: 700; }
+.combo-list li.blank { color: var(--muted); }
+.combo-list .combo-empty { color: var(--muted); cursor: default; }
 .month-pick { width: 170px; }
 .search { max-width: 240px; }
 .mt { margin-top: 14px; }

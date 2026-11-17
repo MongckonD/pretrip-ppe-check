@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useMaster } from './MasterContext';
 import { signedUrls } from '../lib/api';
 
+/**
+ * Employee picker you can type into: type part of a code or name to filter, then pick
+ * (click, or ↑ ↓ + Enter). Only employees in the system can be chosen, because every
+ * record is linked to an employee in the database; leaving the box empty means "none".
+ */
 export function EmployeeSelect(props: {
   value: string;
   onChange: (v: string) => void;
@@ -11,17 +16,107 @@ export function EmployeeSelect(props: {
   exclude?: string[];
 }) {
   const { activeEmployees } = useMaster();
+  const autoId = useId();
+  const listId = `${props.id ?? autoId}-list`;
   const taken = new Set((props.exclude ?? []).filter((x) => x && x !== props.value));
+  const choices = activeEmployees.filter((e) => !taken.has(e.id));
+  const labelOf = (id: string) => {
+    const e = activeEmployees.find((x) => x.id === id);
+    return e ? (e.name ? `${e.id} · ${e.name}` : e.id) : id;
+  };
+
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [typing, setTyping] = useState(false);
+  const [active, setActive] = useState(0);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  const q = typing ? text.trim().toLowerCase() : '';
+  const matches = q ? choices.filter((e) => e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q)) : choices;
+  // first row clears the field ("ไม่มี" / "เลือกผู้ตรวจ"), then the matching employees
+  const rows: { id: string; label: string }[] = [
+    ...(q ? [] : [{ id: '', label: props.blank }]),
+    ...matches.map((e) => ({ id: e.id, label: e.name ? `${e.id} · ${e.name}` : e.id })),
+  ];
+
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [active, open]);
+
+  const pick = (id: string) => {
+    props.onChange(id);
+    setTyping(false);
+    setOpen(false);
+  };
+  /** leaving the box: keep what was typed only if it names exactly one employee */
+  const settle = () => {
+    if (typing) {
+      const t = text.trim().toLowerCase();
+      if (!t) props.onChange('');
+      else {
+        const exact = choices.find((e) => e.id.toLowerCase() === t || e.name.toLowerCase() === t);
+        const only = matches.length === 1 ? matches[0] : undefined;
+        const hit = exact ?? only;
+        if (hit) props.onChange(hit.id);
+      }
+    }
+    setTyping(false);
+    setOpen(false);
+  };
+
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) { setOpen(true); return; }
+      const n = rows.length;
+      if (n) setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+    } else if (e.key === 'Enter') {
+      if (open && rows[active]) { e.preventDefault(); pick(rows[active].id); }
+    } else if (e.key === 'Escape') {
+      if (open) { e.preventDefault(); setTyping(false); setOpen(false); }
+    }
+  };
+
   return (
-    <select id={props.id} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
-      <option value="">{props.blank}</option>
-      {activeEmployees.filter((e) => !taken.has(e.id)).map((e) => (
-        <option key={e.id} value={e.id}>
-          {e.id}
-          {e.name ? ` · ${e.name}` : ''}
-        </option>
-      ))}
-    </select>
+    <div className="combo">
+      <input
+        id={props.id}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={open && rows[active] ? `${listId}-${active}` : undefined}
+        autoComplete="off"
+        placeholder={props.blank}
+        value={typing ? text : props.value ? labelOf(props.value) : ''}
+        onFocus={(e) => { setOpen(true); setActive(0); e.currentTarget.select(); }}
+        onClick={() => setOpen(true)}
+        onChange={(e) => { setText(e.target.value); setTyping(true); setOpen(true); setActive(0); }}
+        onBlur={settle}
+        onKeyDown={onKey}
+      />
+      <span className="combo-caret" aria-hidden="true" />
+      {open && (
+        <ul className="combo-list" id={listId} role="listbox" ref={listRef}>
+          {rows.length ? rows.map((r, i) => (
+            <li
+              key={r.id || '_blank'}
+              id={`${listId}-${i}`}
+              data-i={i}
+              role="option"
+              aria-selected={r.id === props.value}
+              className={`${i === active ? 'active' : ''}${r.id ? '' : ' blank'}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              // preventDefault: the field sits inside a <label>, which would otherwise click the input and reopen the list
+              onClick={(e) => { e.preventDefault(); pick(r.id); }}
+            >
+              {r.label}
+            </li>
+          )) : <li className="combo-empty">ไม่พบพนักงาน "{text.trim()}"</li>}
+        </ul>
+      )}
+    </div>
   );
 }
 
