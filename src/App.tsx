@@ -11,13 +11,13 @@ import { TimeActivitiesPage } from './pages/TimeActivitiesPage';
 import { VehiclePage } from './pages/VehiclePage';
 
 const STAFF_TABS: TabDef[] = [
-  { key: 'veh', label: 'ตรวจรถ', title: 'ตรวจรถก่อนออกงาน', icon: TruckIcon, render: () => <VehiclePage /> },
-  { key: 'ppe', label: 'PPE', title: 'ตรวจ PPE พนักงาน', icon: VestIcon, render: () => <PpePage /> },
-  { key: 'time', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: () => <TimeActivitiesPage /> },
+  { key: 'veh', path: '/vehicle', label: 'ตรวจรถ', title: 'ตรวจรถก่อนออกงาน', icon: TruckIcon, render: () => <VehiclePage /> },
+  { key: 'ppe', path: '/ppe', label: 'PPE', title: 'ตรวจ PPE พนักงาน', icon: VestIcon, render: () => <PpePage /> },
+  { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: () => <TimeActivitiesPage /> },
 ];
 
 function StaffShell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
-  return <AppShell me={me} onLogout={onLogout} tabs={STAFF_TABS} storageKey="tab" brandSub="Delivery Team App" />;
+  return <AppShell me={me} onLogout={onLogout} tabs={STAFF_TABS} brandSub="Delivery Team App" />;
 }
 
 export default function App() {

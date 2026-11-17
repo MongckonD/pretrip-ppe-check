@@ -2,6 +2,7 @@
  * Shared layout for both web pages (staff `/` and admin `/admin/`):
  * sidebar on desktop, icon rail on tablet, top bar + bottom menu on phone.
  * Each page passes its own tabs; master data, password change and errors are handled here.
+ * Every tab has its own URL path (e.g. /ppe, /admin/data): links, refresh and the back button work.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { isTestMode, loadMaster, type Me } from '../lib/api';
@@ -15,6 +16,8 @@ export interface PageCtx { month: string; setMonth: (m: string) => void; go: (ke
 
 export interface TabDef {
   key: string;
+  /** URL path of this tab, e.g. '/ppe' or '/admin/data' */
+  path: string;
   label: string;
   /** shorter label for the tablet rail / phone bottom bar */
   short?: string;
@@ -27,18 +30,19 @@ export interface ShellProps {
   me: Me | null;
   onLogout?: () => void;
   tabs: TabDef[];
-  /** sessionStorage key for the remembered tab */
-  storageKey: string;
   brandSub: string;
-  /** link to the other page (staff ↔ admin), shown when present */
 }
 
-export function AppShell({ me, onLogout, tabs, storageKey, brandSub }: ShellProps) {
-  const [tab, setTab] = useState<string>(() => {
-    let saved: string | null = null;
-    try { saved = sessionStorage.getItem(storageKey); } catch { /* storage unavailable */ }
-    return tabs.some((t) => t.key === saved) ? (saved as string) : tabs[0].key;
-  });
+const normPath = (p: string) => (p.toLowerCase().replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/');
+
+/** Tab for the current address; unknown paths fall back to the first tab. */
+function tabFromUrl(tabs: TabDef[]): TabDef {
+  const here = normPath(window.location.pathname);
+  return tabs.find((t) => normPath(t.path) === here) ?? tabs[0];
+}
+
+export function AppShell({ me, onLogout, tabs, brandSub }: ShellProps) {
+  const [tab, setTab] = useState<string>(() => tabFromUrl(tabs).key);
   const [month, setMonth] = useState(today().slice(0, 7));
   const [master, setMaster] = useState<Master | null>(null);
   const [error, setError] = useState('');
@@ -53,13 +57,30 @@ export function AppShell({ me, onLogout, tabs, storageKey, brandSub }: ShellProp
 
   const ctx = useMemo(() => (master ? buildMasterCtx(master, reload) : null), [master, reload]);
 
+  // address bar always shows the open tab's path (fixes /, /admin/ and unknown paths in place)
+  const current = tabs.find((t) => t.key === tab) ?? tabs[0];
+  useEffect(() => {
+    if (normPath(window.location.pathname) !== normPath(current.path)) {
+      window.history.replaceState(null, '', current.path + window.location.search + window.location.hash);
+    }
+    document.title = `${current.title} · D-Trip`;
+  }, [current]);
+
+  // back / forward buttons
+  useEffect(() => {
+    const onPop = () => { setTab(tabFromUrl(tabs).key); setPwOpen(false); };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [tabs]);
+
   const go = useCallback((t: string) => {
-    if (!tabs.some((x) => x.key === t)) return;
+    const next = tabs.find((x) => x.key === t);
+    if (!next) return;
+    if (normPath(window.location.pathname) !== normPath(next.path)) window.history.pushState(null, '', next.path);
     setTab(t);
     setPwOpen(false);
     window.scrollTo({ top: 0 });
-    try { sessionStorage.setItem(storageKey, t); } catch { /* storage unavailable */ }
-  }, [tabs, storageKey]);
+  }, [tabs]);
 
   const togglePw = () => { setPwOpen((o) => !o); setPwDone(false); };
   const userBox = isTestMode ? (
@@ -85,7 +106,6 @@ export function AppShell({ me, onLogout, tabs, storageKey, brandSub }: ShellProp
       </div>
     </>
   );
-  const current = tabs.find((t) => t.key === tab) ?? tabs[0];
   const brand = (
     <>
       <span className="brand-mark sm" aria-hidden="true" />

@@ -12,14 +12,14 @@ import { SettingsPage } from '../pages/SettingsPage';
 import { AdminHomePage } from './AdminHomePage';
 
 const ADMIN_TABS: TabDef[] = [
-  { key: 'home', label: 'หน้าหลัก', title: 'หน้าหลัก', icon: HomeIcon, render: (c) => <AdminHomePage go={c.go} /> },
-  { key: 'dash', label: 'ภาพรวม', title: 'ภาพรวมประจำเดือน', icon: ChartIcon, render: (c) => <DashboardPage month={c.month} setMonth={c.setMonth} /> },
-  { key: 'data', label: 'ข้อมูล', title: 'ข้อมูลการตรวจ', icon: TableIcon, render: (c) => <DataPage month={c.month} setMonth={c.setMonth} /> },
-  { key: 'cfg', label: 'ตั้งค่า', title: 'ตั้งค่าระบบ', icon: GearIcon, render: () => <SettingsPage /> },
+  { key: 'home', path: '/admin/home', label: 'หน้าหลัก', title: 'หน้าหลัก', icon: HomeIcon, render: (c) => <AdminHomePage go={c.go} /> },
+  { key: 'dash', path: '/admin/overview', label: 'ภาพรวม', title: 'ภาพรวมประจำเดือน', icon: ChartIcon, render: (c) => <DashboardPage month={c.month} setMonth={c.setMonth} /> },
+  { key: 'data', path: '/admin/data', label: 'ข้อมูล', title: 'ข้อมูลการตรวจ', icon: TableIcon, render: (c) => <DataPage month={c.month} setMonth={c.setMonth} /> },
+  { key: 'cfg', path: '/admin/settings', label: 'ตั้งค่า', title: 'ตั้งค่าระบบ', icon: GearIcon, render: () => <SettingsPage /> },
 ];
 
 function AdminShell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
-  return <AppShell me={me} onLogout={onLogout} tabs={ADMIN_TABS} storageKey="admin-tab" brandSub="ผู้ดูแลระบบ" />;
+  return <AppShell me={me} onLogout={onLogout} tabs={ADMIN_TABS} brandSub="ผู้ดูแลระบบ" />;
 }
 
 export default function AdminApp() {
