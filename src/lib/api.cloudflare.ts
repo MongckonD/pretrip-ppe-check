@@ -4,7 +4,7 @@
  * Login: id_user + password; the Worker sets an HttpOnly session cookie that the browser sends automatically.
  */
 import type {
-  Employee, Master, PpeForm, PpeInspection, Vehicle, VehicleForm, VehicleInspection,
+  Employee, Master, PpeForm, PpeInspection, TripActivity, TripForm, Vehicle, VehicleForm, VehicleInspection,
 } from './types';
 
 /** admin = ทุกอย่าง · user = พนักงาน */
@@ -146,6 +146,21 @@ export async function savePpeInspections(f: PpeForm) {
 
 export async function deletePpeInspection(id: string) {
   await call('DELETE', `/api/ppe-inspections/${encodeURIComponent(id)}`);
+}
+
+/* ---------- Time activities ---------- */
+export const listTripActivities = (opts: { date?: string; month?: string }) =>
+  call<TripActivity[]>('GET', `/api/trip-activities?${q(opts)}`);
+
+export async function saveTripActivity(f: TripForm) {
+  const r = await call<{ id: string }>('POST', '/api/trip-activities', {
+    id: f.id, date: f.date, time: f.time, plate: f.plate.trim(), dman: f.dman, areas: f.areas, note: f.note,
+  });
+  return r.id;
+}
+
+export async function deleteTripActivity(id: string) {
+  await call('DELETE', `/api/trip-activities/${encodeURIComponent(id)}`);
 }
 
 /** Only meaningful in test mode. */

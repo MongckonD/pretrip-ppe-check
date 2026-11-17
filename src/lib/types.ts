@@ -8,6 +8,8 @@ export interface Vehicle { id: string; plate: string; type: string; active: bool
 export interface CheckItem { item_no: number; name: string; hint: string; active: boolean }
 export interface PpeItem { code: string; name: string; sort_order: number; active: boolean }
 export interface PhotoSlot { code: string; name: string; sort_order: number }
+/** ประเภทพื้นที่ (ตาราง area_types) */
+export interface AreaType { code: string; name: string; description: string; sort_order: number; active: boolean }
 
 export interface Master {
   employees: Employee[];
@@ -17,6 +19,8 @@ export interface Master {
   photoSlots: PhotoSlot[];
   /** ตำแหน่งที่เลือกได้ (ตาราง employee_roles) */
   roles: string[];
+  /** ประเภทพื้นที่สำหรับ Time activities */
+  areaTypes: AreaType[];
 }
 
 /** Row of v_vehicle_inspection_summary */
@@ -69,6 +73,34 @@ export interface VehicleForm {
   note: string;
   results: Record<number, VehResult>;
   photos: Record<string, string>;
+}
+
+/** Row of v_trip_activity_summary (1 vehicle / 1 day) */
+export interface TripActivity {
+  id: string;
+  activity_date: string;
+  month: string;
+  depart_time: string;
+  vehicle_id: string;
+  plate: string;
+  dman_id: string;
+  vehicle_inspection_id: string | null;
+  /** มีใบตรวจรถของวันเดียวกันแล้ว */
+  inspected: boolean;
+  area_codes: string[];
+  area_names: string;
+  area_count: number;
+  note: string;
+}
+
+export interface TripForm {
+  id: string | null;
+  date: string;
+  time: string;
+  plate: string;
+  dman: string;
+  areas: string[];
+  note: string;
 }
 
 export interface PpeForm {

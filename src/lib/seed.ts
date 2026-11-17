@@ -1,4 +1,4 @@
-import type { CheckItem, PhotoSlot, PpeItem } from './types';
+import type { CheckItem, PhotoSlot, PpeItem, AreaType } from './types';
 
 /** Same rows as cloudflare/migrations/0003_seed.sql */
 export const CHECK_ITEMS: CheckItem[] = ([
@@ -36,6 +36,17 @@ export const PPE_ITEMS: PpeItem[] = [
 
 /** Same as employee_roles in cloudflare/migrations/0003_seed.sql */
 export const ROLES = ['D-Man', 'Helper', 'ธุรการ', 'อื่น ๆ'];
+
+/** Same as area_types in cloudflare/migrations/0005_trip_activities.sql */
+export const AREA_TYPES: AreaType[] = ([
+  ['remote', 'พื้นที่ไกล'],
+  ['mountain', 'พื้นที่ขึ้นเขา'],
+  ['urban_dense', 'พื้นที่หนาแน่นในเมือง'],
+  ['suburban_dense', 'พื้นที่หนาแน่นนอกเมือง'],
+  ['easy_access', 'พื้นที่เข้าถึงง่าย'],
+  ['narrow_road', 'พื้นที่ถนนแคบ (2 เลน)'],
+  ['road_works', 'พื้นที่ถนนซ่อมบำรุง'],
+] as const).map(([code, name], i) => ({ code, name, description: '', sort_order: i + 1, active: true }));
 
 export const PHOTO_SLOTS: PhotoSlot[] = [
   { code: 'front', name: 'หน้า', sort_order: 1 },

@@ -165,7 +165,7 @@ function Shell({ me, onLogout }: { me: Me | null; onLogout?: () => void }) {
             {tabs.map(([k, l]) => {
               const Icon = TAB_ICON[k];
               return (
-                <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)}>
+                <button key={k} role="tab" aria-selected={tab === k} aria-label={l} onClick={() => go(k)}>
                   <Icon /><span className="nav-full">{l}</span><span className="nav-short">{SHORT_LABEL[k] ?? l}</span>
                 </button>
               );

@@ -19,6 +19,7 @@
 ทดสอบแล้วบน D1 local (wrangler 4.162.0): `wrangler d1 migrations apply --local` ผ่านทั้ง 3 ไฟล์ และชุดทดสอบ 34 กรณีผ่าน `db.batch()` จริงผ่านทั้งหมด (constraint, trigger ล็อก, upsert, rollback เมื่อ batch ล้ม, ผลของ view)
 | [`migrations/0003_seed.sql`](migrations/0003_seed.sql) | รหัสผล, ตำแหน่ง, 23 ข้อตรวจรถ, 4 PPE, 6 ช่องรูป, EMP01–EMP06 (ตัวอย่าง — ระบบจริง import รายชื่อจริงแทนแล้ว) |
 | [`migrations/0004_roles_admin_user.sql`](migrations/0004_roles_admin_user.sql) | สิทธิ์เหลือ `admin` / `user` · รหัสที่ admin ตั้งไม่บังคับเปลี่ยน |
+| [`migrations/0005_trip_activities.sql`](migrations/0005_trip_activities.sql) | Time activities: ประเภทพื้นที่ 7 แบบ, บันทึกก่อนออกงาน, ความสัมพันธ์หลายต่อหลาย, view รายงาน |
 
 ---
 
@@ -216,13 +217,17 @@ Worker ต้องตรวจเอง (เพราะ SQLite ใช้ `date
 | POST | `/api/ppe-inspections` | user | บันทึกหลายคนพร้อมกัน (ทั้งชุดสำเร็จหรือไม่สำเร็จด้วยกัน) |
 | DELETE | `/api/ppe-inspections/:id` | user | |
 | POST / DELETE | `/api/ppe-inspections/:id/approval` | admin | |
+| GET | `/api/trip-activities?date=` หรือ `?month=` | user | บันทึกก่อนออกงาน + ประเภทพื้นที่ |
+| POST | `/api/trip-activities` | user | `{id?, date, time, plate, dman, areas: [code...], note}` — ต้องเลือกพื้นที่ ≥ 1 · 1 รถ/วัน (ไม่มี id = upsert ตามวัน+รถ) |
+| DELETE | `/api/trip-activities/:id` | user | ลบเที่ยวและประเภทพื้นที่ของเที่ยวนั้น |
 | POST | `/api/photos?date=YYYY-MM-DD` | user | body = ไฟล์รูป ≤ 5 MB, ตรวจชนิดจาก byte จริง (JPEG/PNG/WebP) |
 | GET | `/api/photos/<key>` | user | ส่งรูปจาก R2 (เบราว์เซอร์ถามใหม่ทุกครั้งผ่าน ETag → รูปที่ลบแล้วหายทันที) |
 | POST | `/api/photos/delete` | user | `{keys: [...]}` ลบเฉพาะรูปที่ **ไม่ได้** อยู่ในใบตรวจใด |
 | GET | `/api/reports/<ชื่อ>.csv` หรือ `.json` `?month=` | user | สำหรับ Excel / Power BI (ดูรายชื่อด้านล่าง) |
 
 รายงาน: `daily-summary`, `daily-vehicle-status`, `daily-ppe-status`, `employee-daily`, `employee-monthly`,
-`vehicle-inspections`, `ppe-inspections`, `vehicle-item-results`, `ppe-item-results`, `mileage-check`
+`vehicle-inspections`, `ppe-inspections`, `vehicle-item-results`, `ppe-item-results`, `mileage-check`,
+`trip-activities`, `trip-area-results`, `trip-area-monthly`
 (CSV มี BOM เปิดใน Excel ภาษาไทยไม่เพี้ยน และกัน formula injection แล้ว)
 
 ### กติกาที่ API บังคับเพิ่มจากฐานข้อมูล
@@ -241,6 +246,7 @@ Worker ต้องตรวจเอง (เพราะ SQLite ใช้ `date
 - บน Cloudflare จริง: การตรวจรหัสผ่าน (PBKDF2 100,000 รอบ) ทำงานได้ในแผนฟรี (~0.2–0.4 วินาทีต่อครั้ง) · ทดสอบบันทึกรถ/ใบตรวจ/PPE/รูปจริงแล้วลบทิ้ง ผ่านครบ
 - migration 0004 มีตัวกัน: ถ้ามีบันทึกที่อ้างถึงผู้ใช้อยู่แล้วจะไม่ยอมรัน (ทดสอบบน D1 local แล้ว)
 - หน้าเว็บจริงต่อ API local: ตั้งค่า, ตรวจรถ + อัปโหลดรูป, PPE, ภาพรวม, ข้อมูล — ไม่มี error
+- Time activities: **25 กรณีผ่าน** — validation, เรียงพื้นที่ตาม sort_order, upsert, ผูก/ปลดการผูกกับใบตรวจรถอัตโนมัติ, ห้ามซ้ำ 1 รถ/วัน, ประเภทที่ปิดใช้งาน, รถที่มีประวัติถูกปิดแทนลบ, รายงาน, audit log · migration 0005 รันทับฐานข้อมูลที่มีข้อมูลอยู่แล้วได้
 
 ---
 
@@ -268,6 +274,29 @@ npm run deploy
 - เว็บจริงตอนนี้: https://pretrip-ppe-check.pretrip-ppe-check.workers.dev — ไม่ได้ใช้ Cloudflare Access แล้ว (login ผ่านแอป)
 - ลืมรหัสผ่าน: admin ตั้งรหัสผ่านใหม่ให้ที่แท็บตั้งค่า → ผู้ใช้งานระบบ (ใช้ได้ทันที)
 - admin ลืมรหัสเองและไม่มี admin คนอื่น: ให้ผู้ดูแลเครื่องรันคำสั่ง SQL ใน D1 Console ตั้ง `password_hash` ใหม่ (ควรมี admin อย่างน้อย 2 คนกันกรณีนี้)
+
+---
+
+## 6.5 Time activities (บันทึกก่อนออกงาน)
+
+```mermaid
+erDiagram
+  vehicles ||--o{ trip_activities : vehicle_id
+  employees ||--o{ trip_activities : dman_id
+  vehicle_inspections |o--o{ trip_activities : "วันเดียวกัน + รถคันเดียวกัน"
+  trip_activities ||--|{ trip_activity_areas : "≥ 1 ประเภท"
+  area_types ||--o{ trip_activity_areas : area_code
+```
+
+| ตาราง | 1 แถว = | กติกา |
+|---|---|---|
+| `area_types` | ประเภทพื้นที่ | `code` ถาวร (remote, mountain, urban_dense, suburban_dense, easy_access, narrow_road, road_works) · ปิดใช้งานด้วย `active = 0` · ลบไม่ได้ถ้ามีเที่ยวใช้อยู่ |
+| `trip_activities` | รถ 1 คัน / 1 วัน | เวลาออกงาน (บังคับ), D-Man, หมายเหตุ ≤ 1000 ตัว · UNIQUE (วัน, รถ) · `vehicle_inspection_id` ชี้ใบตรวจรถวันเดียวกันของรถคันเดียวกันเท่านั้น (trigger บังคับ) |
+| `trip_activity_areas` | เที่ยว × ประเภท | PK (เที่ยว, ประเภท) ห้ามซ้ำ · ลบเที่ยว = ลบประเภทของเที่ยวด้วย |
+
+- บันทึกเที่ยวก่อนหรือหลังใบตรวจรถก็ได้ — ระบบผูกให้อัตโนมัติ และปลดการผูกเองเมื่อใบตรวจรถถูกย้ายวัน/รถ หรือถูกลบ
+- ประเภทที่ปิดใช้งานแล้วเลือกใหม่ไม่ได้ แต่เที่ยวเก่าที่มีอยู่แก้ไขต่อได้
+- View: `v_trip_activity_summary` (1 แถว/เที่ยว พร้อมชื่อพื้นที่), `v_trip_area_results` (แบบยาวสำหรับ BI), `v_trip_area_monthly` (จำนวนเที่ยว/คัน/คนต่อประเภทต่อเดือน)
 
 ---
 

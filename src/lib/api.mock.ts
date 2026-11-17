@@ -4,9 +4,9 @@
  * the same functions so the UI does not change when the real backend is switched on.
  */
 import type {
-  Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult,
+  Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity, TripForm,
 } from './types';
-import { CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS, ROLES } from './seed';
+import { AREA_TYPES, CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS, ROLES } from './seed';
 import { monthRange, pad2, photoStatus, today } from './utils';
 
 /* ---------- row shapes (= the tables) ---------- */
@@ -19,7 +19,10 @@ interface PpeRow {
   id: string; inspect_date: string; employee_id: string; inspector_id: string; plate: string;
   results: Record<string, PpeResult>;
 }
-interface Db { employees: Employee[]; vehicles: Vehicle[]; veh: VehRow[]; ppe: PpeRow[] }
+interface TripRow {
+  id: string; activity_date: string; depart_time: string; vehicle_id: string; dman_id: string; areas: string[]; note: string;
+}
+interface Db { employees: Employee[]; vehicles: Vehicle[]; veh: VehRow[]; ppe: PpeRow[]; trips: TripRow[] }
 
 const KEY = 'pretrip-mock-v3';
 let mem: Db | null = null;
@@ -28,7 +31,11 @@ function load(): Db {
   if (mem) return mem;
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return (mem = JSON.parse(raw) as Db);
+    if (raw) {
+      mem = JSON.parse(raw) as Db;
+      mem.trips ??= []; // saved by a version before Time activities
+      return mem;
+    }
     // drop data saved by older demo versions
     Object.keys(localStorage).filter((k) => k.startsWith('pretrip-mock-') && k !== KEY).forEach((k) => localStorage.removeItem(k));
   } catch { /* storage unavailable or corrupt: fall through to demo data */ }
@@ -85,13 +92,23 @@ function demoData(): Db {
     });
   }
   veh.filter((r) => Object.values(r.results).includes(2)).forEach((r) => { r.note = 'แจ้งช่างแล้ว'; });
-  return { employees, vehicles, veh, ppe };
+  // a few demo trips for the last days so the Time activities list is not empty
+  const trips: TripRow[] = [];
+  const areaSets = [['remote', 'mountain'], ['urban_dense'], ['suburban_dense', 'narrow_road']];
+  veh.slice(-9).forEach((r, i) => {
+    const v = vehicles.find((x) => x.plate === r.plate)!;
+    trips.push({
+      id: uuid(), activity_date: r.inspect_date, depart_time: `07:${pad2(30 + (i % 3) * 5)}:00`,
+      vehicle_id: v.id, dman_id: r.dman_id, areas: areaSets[i % 3], note: '',
+    });
+  });
+  return { employees, vehicles, veh, ppe, trips };
 }
 
 /** Wipe test data (rows + photos) and start again from the demo set. */
 export async function resetDemo(empty = false) {
   mem = empty
-    ? { ...demoData(), veh: [], ppe: [] }
+    ? { ...demoData(), veh: [], ppe: [], trips: [] }
     : demoData();
   persist();
   await idb('readwrite', (s) => s.clear()).catch(() => {});
@@ -138,7 +155,7 @@ export async function loadMaster(): Promise<Master> {
   return {
     employees: [...db.employees].sort((a, b) => a.id.localeCompare(b.id)),
     vehicles: [...db.vehicles].sort((a, b) => a.plate.localeCompare(b.plate)),
-    checkItems: CHECK_ITEMS, ppeItems: PPE_ITEMS, photoSlots: PHOTO_SLOTS, roles: ROLES,
+    checkItems: CHECK_ITEMS, ppeItems: PPE_ITEMS, photoSlots: PHOTO_SLOTS, roles: ROLES, areaTypes: AREA_TYPES,
   };
 }
 
@@ -275,5 +292,54 @@ export async function savePpeInspections(f: PpeForm) {
 export async function deletePpeInspection(id: string) {
   const db = load();
   db.ppe = db.ppe.filter((r) => r.id !== id);
+  persist();
+}
+
+/* ---------- Time activities ---------- */
+function tripSummary(t: TripRow, db: Db): TripActivity {
+  const v = db.vehicles.find((x) => x.id === t.vehicle_id);
+  const ordered = AREA_TYPES.filter((a) => t.areas.includes(a.code));
+  const vi = db.veh.find((r) => r.inspect_date === t.activity_date && r.plate === v?.plate);
+  return {
+    id: t.id, activity_date: t.activity_date, month: t.activity_date.slice(0, 7), depart_time: t.depart_time,
+    vehicle_id: t.vehicle_id, plate: v?.plate ?? '', dman_id: t.dman_id,
+    vehicle_inspection_id: vi?.id ?? null, inspected: !!vi,
+    area_codes: ordered.map((a) => a.code), area_names: ordered.map((a) => a.name).join(', '), area_count: ordered.length,
+    note: t.note,
+  };
+}
+
+export async function listTripActivities(opts: { date?: string; month?: string }) {
+  await tick();
+  const db = load();
+  return db.trips
+    .filter((t) => inRange(t.activity_date, opts))
+    .sort((a, b) => (a.activity_date + a.depart_time).localeCompare(b.activity_date + b.depart_time))
+    .map((t) => tripSummary(t, db));
+}
+
+export async function saveTripActivity(f: TripForm) {
+  await tick();
+  const db = load();
+  const v = db.vehicles.find((x) => x.plate === f.plate.trim());
+  if (!v) throw new Error(`ยังไม่ได้ลงทะเบียนรถ ${f.plate.trim()} — เพิ่มได้ที่แท็บตั้งค่า`);
+  if (!f.areas.length) throw new Error('เลือกประเภทพื้นที่อย่างน้อย 1 อย่าง');
+  const row: Omit<TripRow, 'id'> = {
+    activity_date: f.date, depart_time: `${f.time}:00`, vehicle_id: v.id, dman_id: f.dman,
+    areas: [...new Set(f.areas)], note: f.note,
+  };
+  const clash = db.trips.find((t) => t.activity_date === f.date && t.vehicle_id === v.id && t.id !== f.id);
+  let target = f.id ? db.trips.find((t) => t.id === f.id) : undefined;
+  if (target && clash) throw new Error(`ทะเบียน ${v.plate} มีบันทึกก่อนออกงานของวันที่ ${f.date} แล้ว`);
+  target ??= clash;
+  if (target) Object.assign(target, row);
+  else db.trips.push((target = { id: uuid(), ...row }));
+  persist();
+  return target.id;
+}
+
+export async function deleteTripActivity(id: string) {
+  const db = load();
+  db.trips = db.trips.filter((t) => t.id !== id);
   persist();
 }

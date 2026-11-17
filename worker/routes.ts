@@ -21,29 +21,29 @@ export interface Ctx {
   params: string[];
 }
 
-const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
+export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
 const PLATE_KEY_SQL = (p: string) => `upper(replace(replace(replace(${p}, ' ', ''), '-', ''), '.', ''))`;
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
-function audit(env: Env, actor: Actor, action: string, entity: string, id: string, detail?: unknown) {
+export function audit(env: Env, actor: Actor, action: string, entity: string, id: string, detail?: unknown) {
   return env.DB.prepare(
     `INSERT INTO audit_log (actor, action, entity, entity_id, detail) VALUES (?1, ?2, ?3, ?4, ?5)`,
   ).bind(actor.id, action, entity, id, detail === undefined ? null : JSON.stringify(detail));
 }
 
-const parse = <T>(s: unknown, fallback: T): T => {
+export const parse = <T>(s: unknown, fallback: T): T => {
   if (typeof s !== 'string') return fallback;
   try { return JSON.parse(s) as T; } catch { return fallback; }
 };
 
-async function findVehicleByPlate(env: Env, p: string) {
+export async function findVehicleByPlate(env: Env, p: string) {
   return env.DB.prepare(
     `SELECT id, plate, active FROM vehicles WHERE plate_key = ${PLATE_KEY_SQL('?1')}`,
   ).bind(p).first<{ id: string; plate: string; active: number }>();
 }
 
 /** Throws 400 listing any ids that are not in employees. */
-async function assertEmployeesExist(env: Env, ids: string[]) {
+export async function assertEmployeesExist(env: Env, ids: string[]) {
   const uniq = [...new Set(ids)];
   if (!uniq.length) return;
   const { results } = await env.DB.prepare(
@@ -54,7 +54,7 @@ async function assertEmployeesExist(env: Env, ids: string[]) {
   if (missing.length) throw bad(`ไม่พบรหัสพนักงาน ${missing.join(', ')}`);
 }
 
-function dateFilter(url: URL): { sql: string; args: string[] } {
+export function dateFilter(url: URL): { sql: string; args: string[] } {
   const date = url.searchParams.get('date');
   const month = url.searchParams.get('month');
   if (date) {
@@ -74,13 +74,14 @@ function dateFilter(url: URL): { sql: string; args: string[] } {
  * ===================================================================== */
 
 export async function getMaster({ env }: Ctx) {
-  const [emps, vehs, items, ppe, slots, roles] = await env.DB.batch([
+  const [emps, vehs, items, ppe, slots, roles, areas] = await env.DB.batch([
     env.DB.prepare(`SELECT id, name, coalesce(role, '') AS role, active FROM employees ORDER BY id`),
     env.DB.prepare(`SELECT id, plate, type, active FROM vehicles ORDER BY plate`),
     env.DB.prepare(`SELECT item_no, name, hint, active FROM check_items ORDER BY item_no`),
     env.DB.prepare(`SELECT code, name, sort_order, active FROM ppe_items ORDER BY sort_order, code`),
     env.DB.prepare(`SELECT code, name, sort_order FROM photo_slots WHERE active = 1 ORDER BY sort_order, code`),
     env.DB.prepare(`SELECT code FROM employee_roles ORDER BY sort_order, code`),
+    env.DB.prepare(`SELECT code, name, description, sort_order, active FROM area_types ORDER BY sort_order, code`),
   ]);
   type R = Record<string, unknown>;
   const b = (r: R, k: string) => ({ ...r, [k]: r[k] === 1 });
@@ -91,6 +92,7 @@ export async function getMaster({ env }: Ctx) {
     ppeItems: (ppe.results as R[]).map((r) => b(r, 'active')),
     photoSlots: slots.results,
     roles: (roles.results as { code: string }[]).map((r) => r.code),
+    areaTypes: (areas.results as R[]).map((r) => b(r, 'active')),
   });
 }
 
@@ -182,7 +184,8 @@ export async function deleteVehicle({ env, actor, params }: Ctx) {
   if (!v) throw notFound('ไม่พบรถคันนี้');
   const used = await env.DB.prepare(
     `SELECT EXISTS (SELECT 1 FROM vehicle_inspections WHERE vehicle_id = ?1)
-         OR EXISTS (SELECT 1 FROM ppe_inspections WHERE vehicle_id = ?1) AS used`,
+         OR EXISTS (SELECT 1 FROM ppe_inspections WHERE vehicle_id = ?1)
+         OR EXISTS (SELECT 1 FROM trip_activities WHERE vehicle_id = ?1) AS used`,
   ).bind(id).first<{ used: number }>();
   if (used?.used) {
     await env.DB.batch([
@@ -311,7 +314,11 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
   }));
 
   await env.DB.batch([
-    // PPE sheets linked to this inspection must follow its date/vehicle, so unlink any that no longer match
+    // trips and PPE sheets linked to this inspection must follow its date/vehicle, so unlink any that no longer match
+    env.DB.prepare(
+      `UPDATE trip_activities SET vehicle_inspection_id = NULL
+       WHERE vehicle_inspection_id = ?1 AND (activity_date <> ?2 OR vehicle_id <> ?3)`,
+    ).bind(id, date, vehicle.id),
     env.DB.prepare(
       `UPDATE ppe_inspections SET vehicle_inspection_id = NULL
        WHERE vehicle_inspection_id = ?1 AND (inspect_date <> ?2 OR vehicle_id IS NOT ?3)`,
@@ -337,6 +344,11 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
        SELECT ?1, j.key, json_extract(j.value, '$.k'), json_extract(j.value, '$.t'), json_extract(j.value, '$.s'), ?3
        FROM json_each(?2) j`,
     ).bind(id, JSON.stringify(photoMeta), actor.id),
+    // the trip of the same day and vehicle saved earlier gets linked now
+    env.DB.prepare(
+      `UPDATE trip_activities SET vehicle_inspection_id = ?1
+       WHERE activity_date = ?2 AND vehicle_id = ?3 AND vehicle_inspection_id IS NULL`,
+    ).bind(id, date, vehicle.id),
     // PPE sheets of the same day and vehicle saved earlier get linked now
     env.DB.prepare(
       `UPDATE ppe_inspections SET vehicle_inspection_id = ?1
@@ -610,6 +622,9 @@ const REPORTS: Record<string, { view: string; dateCol: string; order: string }> 
   'vehicle-item-results': { view: 'v_vehicle_item_results', dateCol: 'inspect_date', order: 'inspect_date, plate, item_no' },
   'ppe-item-results': { view: 'v_ppe_item_results', dateCol: 'inspect_date', order: 'inspect_date, employee_id, ppe_code' },
   'mileage-check': { view: 'v_mileage_check', dateCol: 'inspect_date', order: 'plate, inspect_date' },
+  'trip-activities': { view: 'v_trip_activity_summary', dateCol: 'activity_date', order: 'activity_date, depart_time, plate' },
+  'trip-area-results': { view: 'v_trip_area_results', dateCol: 'activity_date', order: 'activity_date, plate, area_code' },
+  'trip-area-monthly': { view: 'v_trip_area_monthly', dateCol: '', order: 'month, sort_order' },
 };
 
 function csvCell(v: unknown): string {

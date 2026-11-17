@@ -9,6 +9,7 @@ import * as a from './auth-routes';
 import { HttpError, errorResponse, mapDbError } from './http';
 import * as r from './routes';
 import type { Ctx, Env } from './routes';
+import * as trip from './trip-routes';
 
 type Handler = (c: Ctx) => Promise<Response>;
 type PublicHandler = (req: Request, env: Env, exec: ExecutionContext) => Promise<Response>;
@@ -49,6 +50,10 @@ const ROUTES: Route[] = [
   { m: 'DELETE', re: /^\/api\/ppe-inspections\/([^/]+)$/, h: r.deletePpeInspection },
   { m: 'POST', re: /^\/api\/ppe-inspections\/([^/]+)\/approval$/, h: r.approvePpe },
   { m: 'DELETE', re: /^\/api\/ppe-inspections\/([^/]+)\/approval$/, h: r.unapprovePpe },
+
+  { m: 'GET', re: /^\/api\/trip-activities$/, h: trip.listTripActivities },
+  { m: 'POST', re: /^\/api\/trip-activities$/, h: trip.saveTripActivity },
+  { m: 'DELETE', re: /^\/api\/trip-activities\/([^/]+)$/, h: trip.deleteTripActivity },
 
   { m: 'POST', re: /^\/api\/photos$/, h: r.uploadPhoto },
   { m: 'POST', re: /^\/api\/photos\/delete$/, h: r.deletePhotos },
