@@ -632,3 +632,9 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .sum-tbl td:first-child b { white-space: nowrap; }
 .sum-tbl td .note { font-size: 12px; margin-top: 2px; }
 .sum-tbl td.bad-num { color: var(--fail); font-weight: 700; }
+
+/* ---------- PPE summary ---------- */
+.ppe-sum-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.ppe-sum-list li { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.ppe-sum-list li:first-child { border-top: 0; }
+.ppe-sum-miss { font-size: 13px; color: var(--fail); margin-top: 2px; }
