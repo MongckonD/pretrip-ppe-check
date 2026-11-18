@@ -5,7 +5,7 @@
  */
 import { failedDefects } from './api.cloudflare';
 import type {
-  Defect, Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity, TripForm,
+  Defect, Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity,
 } from './types';
 import { licenseStatus, type DriverLicense, type LicenseForm, type LicenseInfo, type LicenseRow } from './license';
 import { AREA_TYPES, CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS, ROLES } from './seed';
@@ -23,8 +23,8 @@ interface PpeRow {
   results: Record<string, PpeResult>;
 }
 interface TripRow {
-  id: string; activity_date: string; depart_time: string; vehicle_id: string; dman_id: string; areas: string[]; note: string;
-  work_started_at?: string | null; work_ended_at?: string | null;
+  id: string; activity_date: string; vehicle_id: string; dman_id: string; areas: string[];
+  work_started_at: string; work_ended_at?: string | null;
 }
 interface Db { employees: Employee[]; vehicles: Vehicle[]; veh: VehRow[]; ppe: PpeRow[]; trips: TripRow[] }
 
@@ -102,8 +102,8 @@ function demoData(): Db {
   veh.slice(-9).forEach((r, i) => {
     const v = vehicles.find((x) => x.plate === r.plate)!;
     trips.push({
-      id: uuid(), activity_date: r.inspect_date, depart_time: `07:${pad2(30 + (i % 3) * 5)}:00`,
-      vehicle_id: v.id, dman_id: r.dman_id, areas: areaSets[i % 3], note: '',
+      id: uuid(), activity_date: r.inspect_date, work_started_at: `${r.inspect_date}T00:${pad2(30 + (i % 3) * 5)}:00.000Z`,
+      vehicle_id: v.id, dman_id: r.dman_id, areas: areaSets[i % 3],
     });
   });
   return { employees, vehicles, veh, ppe, trips };
@@ -304,17 +304,19 @@ export async function deletePpeInspection(id: string) {
 }
 
 /* ---------- Time activities ---------- */
+/** UTC ISO → Thai HH:MM */
+const hhmm = (iso: string) => new Date(Date.parse(iso) + 7 * 3600_000).toISOString().slice(11, 16);
 function tripSummary(t: TripRow, db: Db): TripActivity {
   const v = db.vehicles.find((x) => x.id === t.vehicle_id);
   const ordered = AREA_TYPES.filter((a) => t.areas.includes(a.code));
   const vi = db.veh.find((r) => r.inspect_date === t.activity_date && r.plate === v?.plate);
   return {
-    id: t.id, activity_date: t.activity_date, month: t.activity_date.slice(0, 7), depart_time: t.depart_time,
+    id: t.id, activity_date: t.activity_date, month: t.activity_date.slice(0, 7),
+    start_time: hhmm(t.work_started_at), end_time: t.work_ended_at ? hhmm(t.work_ended_at) : null,
     vehicle_id: t.vehicle_id, plate: v?.plate ?? '', dman_id: t.dman_id,
     vehicle_inspection_id: vi?.id ?? null, inspected: !!vi,
-    area_codes: ordered.map((a) => a.code), area_names: ordered.map((a) => a.name).join(', '), area_count: ordered.length,
-    note: t.note,
-    work_started_at: t.work_started_at ?? null, work_ended_at: t.work_ended_at ?? null,
+    area_codes: ordered.map((a) => a.code),
+    work_started_at: t.work_started_at, work_ended_at: t.work_ended_at ?? null,
     work_minutes: t.work_started_at && t.work_ended_at
       ? Math.round((Date.parse(t.work_ended_at) - Date.parse(t.work_started_at)) / 60_000) : null,
   };
@@ -325,29 +327,10 @@ export async function listTripActivities(opts: { date?: string; month?: string }
   const db = load();
   return db.trips
     .filter((t) => inRange(t.activity_date, opts))
-    .sort((a, b) => (a.activity_date + a.depart_time).localeCompare(b.activity_date + b.depart_time))
+    .sort((a, b) => a.work_started_at.localeCompare(b.work_started_at))
     .map((t) => tripSummary(t, db));
 }
 
-export async function saveTripActivity(f: TripForm) {
-  await tick();
-  const db = load();
-  const v = db.vehicles.find((x) => x.plate === f.plate.trim());
-  if (!v) throw new Error(`ยังไม่ได้ลงทะเบียนรถ ${f.plate.trim()} — เพิ่มได้ที่แท็บตั้งค่า`);
-  if (!f.areas.length) throw new Error('เลือกประเภทพื้นที่อย่างน้อย 1 อย่าง');
-  const row: Omit<TripRow, 'id'> = {
-    activity_date: f.date, depart_time: `${f.time}:00`, vehicle_id: v.id, dman_id: f.dman,
-    areas: [...new Set(f.areas)], note: f.note,
-  };
-  const clash = db.trips.find((t) => t.activity_date === f.date && t.vehicle_id === v.id && t.id !== f.id);
-  let target = f.id ? db.trips.find((t) => t.id === f.id) : undefined;
-  if (target && clash) throw new Error(`ทะเบียน ${v.plate} มีบันทึกก่อนออกงานของวันที่ ${f.date} แล้ว`);
-  target ??= clash;
-  if (target) Object.assign(target, row);
-  else db.trips.push((target = { id: uuid(), ...row }));
-  persist();
-  return target.id;
-}
 
 export async function deleteTripActivity(id: string) {
   const db = load();
@@ -355,18 +338,17 @@ export async function deleteTripActivity(id: string) {
   persist();
 }
 
-export async function startWork(plate: string, time: string) {
+export async function startWork(plate: string) {
   await tick();
   const db = load();
   const v = db.vehicles.find((x) => x.plate === plate.trim());
   if (!v) throw new Error(`ยังไม่ได้ลงทะเบียนรถ ${plate}`);
   const vi = db.veh.find((r) => r.inspect_date === today() && r.plate === v.plate);
   if (!vi) throw new Error(`ยังไม่ได้ตรวจรถทะเบียน ${v.plate} วันนี้ — ตรวจรถก่อนแล้วค่อยเริ่มการทำงาน`);
-  let t = db.trips.find((x) => x.activity_date === today() && x.vehicle_id === v.id);
-  if (t?.work_started_at) throw new Error(`รถ ${v.plate} เริ่มการทำงานของวันนี้ไปแล้ว`);
+  if (db.trips.some((x) => x.activity_date === today() && x.vehicle_id === v.id)) throw new Error(`รถ ${v.plate} เริ่มการทำงานของวันนี้ไปแล้ว`);
   const now = new Date().toISOString();
-  if (!t) db.trips.push((t = { id: uuid(), activity_date: today(), depart_time: `${time}:00`, vehicle_id: v.id, dman_id: vi.dman_id, areas: [], note: '' }));
-  Object.assign(t, { work_started_at: now, depart_time: `${time}:00`, dman_id: vi.dman_id });
+  const t: TripRow = { id: uuid(), activity_date: today(), vehicle_id: v.id, dman_id: vi.dman_id, areas: [], work_started_at: now };
+  db.trips.push(t);
   persist();
   return { id: t.id, work_started_at: now };
 }
@@ -375,7 +357,6 @@ export async function endWork(id: string) {
   await tick();
   const t = load().trips.find((x) => x.id === id);
   if (!t) throw new Error('ไม่พบบันทึกนี้');
-  if (!t.work_started_at) throw new Error('ยังไม่ได้กดเริ่มการทำงาน');
   if (t.work_ended_at) throw new Error('จบงานไปแล้ว');
   t.work_ended_at = new Date().toISOString();
   persist();

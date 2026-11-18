@@ -16,7 +16,7 @@ export const {
   listVehicleInspections, saveVehicleInspection, deleteVehicleInspection,
   uploadPhoto, removePhotos, signedUrls,
   listPpeInspections, savePpeInspections, deletePpeInspection,
-  listTripActivities, saveTripActivity, deleteTripActivity, startWork, endWork,
+  listTripActivities, deleteTripActivity, startWork, endWork,
   getMyLicense, saveMyLicense, listLicenses, licensePhotoUrl,
 } = api;
 

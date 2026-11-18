@@ -68,7 +68,6 @@ const ROUTES: Route[] = [
   { m: 'DELETE', re: /^\/api\/ppe-inspections\/([^/]+)\/approval$/, h: r.unapprovePpe },
 
   { m: 'GET', re: /^\/api\/trip-activities$/, h: trip.listTripActivities },
-  { m: 'POST', re: /^\/api\/trip-activities$/, h: trip.saveTripActivity },
   { m: 'DELETE', re: /^\/api\/trip-activities\/([^/]+)$/, h: trip.deleteTripActivity },
   { m: 'POST', re: /^\/api\/trip-activities\/start$/, h: trip.startWork },
   { m: 'POST', re: /^\/api\/trip-activities\/([^/]+)\/end$/, h: trip.endWork },

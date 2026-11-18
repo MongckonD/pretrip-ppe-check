@@ -681,7 +681,7 @@ const REPORTS: Record<string, { view: string; dateCol: string; order: string }> 
   'vehicle-item-results': { view: 'v_vehicle_item_results', dateCol: 'inspect_date', order: 'inspect_date, plate, item_no' },
   'ppe-item-results': { view: 'v_ppe_item_results', dateCol: 'inspect_date', order: 'inspect_date, employee_id, ppe_code' },
   'mileage-check': { view: 'v_mileage_check', dateCol: 'inspect_date', order: 'plate, inspect_date' },
-  'trip-activities': { view: 'v_trip_activity_summary', dateCol: 'activity_date', order: 'activity_date, depart_time, plate' },
+  'trip-activities': { view: 'v_trip_activity_summary', dateCol: 'activity_date', order: 'activity_date, work_started_at, plate' },
   'trip-area-results': { view: 'v_trip_area_results', dateCol: 'activity_date', order: 'activity_date, plate, area_code' },
   'trip-area-monthly': { view: 'v_trip_area_monthly', dateCol: '', order: 'month, sort_order' },
 };

@@ -93,7 +93,9 @@ export interface TripActivity {
   id: string;
   activity_date: string;
   month: string;
-  depart_time: string;
+  /** Thai HH:MM of the start / end of work (from work_started_at / work_ended_at) */
+  start_time: string;
+  end_time?: string | null;
   vehicle_id: string;
   plate: string;
   dman_id: string;
@@ -101,24 +103,12 @@ export interface TripActivity {
   /** มีใบตรวจรถของวันเดียวกันแล้ว */
   inspected: boolean;
   area_codes: string[];
-  area_names: string;
-  area_count: number;
-  note: string;
   /** work clock (UTC ISO timestamps set by the server); minutes once ended */
-  work_started_at?: string | null;
+  work_started_at: string;
   work_ended_at?: string | null;
   work_minutes?: number | null;
 }
 
-export interface TripForm {
-  id: string | null;
-  date: string;
-  time: string;
-  plate: string;
-  dman: string;
-  areas: string[];
-  note: string;
-}
 
 export interface PpeForm {
   date: string;

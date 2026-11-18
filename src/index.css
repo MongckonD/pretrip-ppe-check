@@ -624,3 +624,11 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .work-done .total { background: var(--pass-bg); border-color: #9FD3B8; }
 .work-done .total b { color: var(--pass); }
 @media (max-width: 420px) { .work-done { grid-template-columns: 1fr 1fr; } .work-done .total { grid-column: 1 / -1; } }
+
+/* ---------- admin summary ---------- */
+.sum-ctrl input { width: auto; }
+.sum-ctrl .seg button[aria-pressed='true'] { background: var(--brand); border-color: var(--brand); color: #fff; }
+.sum-tbl td { vertical-align: top; }
+.sum-tbl td:first-child b { white-space: nowrap; }
+.sum-tbl td .note { font-size: 12px; margin-top: 2px; }
+.sum-tbl td.bad-num { color: var(--fail); font-weight: 700; }

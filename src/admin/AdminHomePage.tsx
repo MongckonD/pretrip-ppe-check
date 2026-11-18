@@ -1,6 +1,6 @@
 /**
  * Admin home: today at a glance — who has / has not done the vehicle check, PPE and pre-departure record,
- * which vehicles failed, and which areas the trucks are going to.
+ * and which vehicles failed.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSignedUrls } from '../components/Fields';
@@ -12,7 +12,7 @@ import { errMsg, today } from '../lib/utils';
 interface Day { veh: VehicleInspection[]; ppe: PpeInspection[]; trips: TripActivity[] }
 
 export function AdminHomePage({ go }: { go: (tab: string) => void }) {
-  const { vehicles, checkItems, areaTypes, nameOf } = useMaster();
+  const { vehicles, checkItems, nameOf } = useMaster();
   const [date, setDate] = useState(today());
   const [day, setDay] = useState<Day | null>(null);
   const [error, setError] = useState('');
@@ -42,8 +42,6 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
       })),
     }));
     const crew = new Set(day.veh.flatMap((r) => [r.dman_id, r.helper1_id, r.helper2_id].filter((x): x is string => !!x)));
-    const areaCount = new Map<string, number>();
-    day.trips.forEach((t) => t.area_codes.forEach((c) => areaCount.set(c, (areaCount.get(c) ?? 0) + 1)));
     return {
       vehTotal: active.length,
       vehDone: active.filter((v) => inspected.has(v.plate)).length,
@@ -52,15 +50,11 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
       ppeTotal: crew.size,
       ppeDone: day.ppe.filter((p) => crew.has(p.employee_id)).length,
       ppeOk: day.ppe.filter((p) => crew.has(p.employee_id) && p.status === 'ครบ').length,
-      // a pre-departure record needs that vehicle's check, so it is counted out of the vehicles checked today
-      tripsTotal: inspected.size,
-      tripsDone: [...inspected].filter((p) => tripPlates.has(p)).length,
       notInspected: active.filter((v) => !inspected.has(v.plate)).map((v) => v.plate),
       noTrip: [...inspected].filter((p) => !tripPlates.has(p)),
       failed,
-      areas: areaTypes.filter((a) => areaCount.has(a.code)).map((a) => ({ name: a.name, n: areaCount.get(a.code)! })),
     };
-  }, [day, vehicles, checkItems, areaTypes]);
+  }, [day, vehicles, checkItems]);
   // photos of failed items (shown next to their notes)
   const urls = useSignedUrls(s?.failed.flatMap((f) => f.items.flatMap((i) => (i.photo ? [i.photo] : []))) ?? []);
 
@@ -80,7 +74,6 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
             <div className={`kpi ${s.vehDone === s.vehTotal && s.vehTotal ? 'good' : ''}`}><b>{s.vehDone}/{s.vehTotal}</b><span>รถตรวจแล้ว</span></div>
             <div className={`kpi ${s.vehFailed ? 'bad' : 'good'}`}><b>{s.vehFailed}</b><span>รถไม่ผ่าน</span></div>
             <div className="kpi"><b>{s.ppeDone}/{s.ppeTotal}</b><span>ตรวจ PPE แล้ว · ทีมบนรถวันนี้ (ครบ {s.ppeOk})</span></div>
-            <div className={`kpi ${s.tripsDone === s.tripsTotal && s.tripsTotal ? 'good' : ''}`}><b>{s.tripsDone}/{s.tripsTotal}</b><span>บันทึกก่อนออกงาน · รถที่ตรวจแล้ว</span></div>
           </div>
         )}
       </section>
@@ -118,14 +111,10 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
             {s.notInspected.length
               ? <div className="tags">{s.notInspected.map((p) => <span key={p} className="tag">{p}</span>)}</div>
               : <div className="note">ตรวจครบทุกคันแล้ว</div>}
-            <div className="mini-head mt">ตรวจรถแล้วแต่ยังไม่บันทึกก่อนออกงาน <span className="note">({s.noTrip.length})</span></div>
+            <div className="mini-head mt">ตรวจรถแล้วแต่ยังไม่เริ่มการทำงาน <span className="note">({s.noTrip.length})</span></div>
             {s.noTrip.length
               ? <div className="tags">{s.noTrip.map((p) => <span key={p} className="tag">{p}</span>)}</div>
-              : <div className="note">บันทึกครบทุกคันแล้ว</div>}
-            <div className="mini-head mt">พื้นที่ที่ออกงาน</div>
-            {s.areas.length
-              ? <div className="tags">{s.areas.map((a) => <span key={a.name} className="tag on">{a.name} <b>{a.n}</b></span>)}</div>
-              : <div className="note">ยังไม่มีบันทึก</div>}
+              : <div className="note">เริ่มการทำงานครบทุกคันแล้ว</div>}
           </section>
         </div>
       )}
@@ -133,6 +122,7 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
       <section className="panel">
         <h2>ไปที่</h2>
         <div className="row">
+          <button className="btn ghost" onClick={() => go('sum')}>สรุปผลการทำงาน</button>
           <button className="btn ghost" onClick={() => go('dash')}>ภาพรวมประจำเดือน</button>
           <button className="btn ghost" onClick={() => go('data')}>ข้อมูลการตรวจ / ดาวน์โหลด CSV</button>
           <button className="btn ghost" onClick={() => go('lic')}>ใบขับขี่พนักงาน</button>

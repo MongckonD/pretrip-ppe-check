@@ -5,7 +5,7 @@
  */
 import type { LicenseForm, LicenseInfo, LicenseRow } from './license';
 import type {
-  Employee, Master, PpeForm, PpeInspection, TripActivity, TripForm, Vehicle, VehicleForm, VehicleInspection,
+  Employee, Master, PpeForm, PpeInspection, TripActivity, Vehicle, VehicleForm, VehicleInspection,
 } from './types';
 
 /** admin = ทุกอย่าง · user = พนักงาน */
@@ -191,19 +191,13 @@ export async function deletePpeInspection(id: string) {
 export const listTripActivities = (opts: { date?: string; month?: string }) =>
   call<TripActivity[]>('GET', `/api/trip-activities?${q(opts)}`);
 
-export async function saveTripActivity(f: TripForm) {
-  const r = await call<{ id: string }>('POST', '/api/trip-activities', {
-    id: f.id, date: f.date, time: f.time, plate: f.plate.trim(), dman: f.dman, areas: f.areas, note: f.note,
-  });
-  return r.id;
-}
 
 export async function deleteTripActivity(id: string) {
   await call('DELETE', `/api/trip-activities/${encodeURIComponent(id)}`);
 }
 /** "เริ่มการทำงาน": the server stamps the start time on today's trip of this vehicle */
-export const startWork = (plate: string, time: string) =>
-  call<{ id: string; work_started_at: string }>('POST', '/api/trip-activities/start', { plate: plate.trim(), time });
+export const startWork = (plate: string) =>
+  call<{ id: string; work_started_at: string }>('POST', '/api/trip-activities/start', { plate: plate.trim() });
 /** "จบงาน / หยุดเวลาทำงาน" */
 export const endWork = (id: string) =>
   call<{ id: string; work_ended_at: string }>('POST', `/api/trip-activities/${encodeURIComponent(id)}/end`, {});

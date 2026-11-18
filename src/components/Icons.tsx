@@ -110,3 +110,11 @@ export const HomeIcon = () => (
     <path d="M10 20v-6h4v6" />
   </Svg>
 );
+
+export const ReportIcon = () => (
+  <Svg>
+    <rect x="5" y="4" width="14" height="17" rx="2" />
+    <path d="M9 4V3h6v1" />
+    <path d="M8.5 16v-3M12 16v-6M15.5 16v-4.5" />
+  </Svg>
+);
