@@ -4,7 +4,8 @@
  *
  * After login a staff member goes through:
  *   1. personal-data consent (until the current version is accepted)
- *   2. driver-licence photo (camera only; OCR fills the fields) — "ข้ามไปหน้าหลัก" allowed while LICENSE_REQUIRED is false
+ *   2. driver-licence photo (camera only; OCR fills the fields) — shown after every sign-in until a licence is on file;
+ *      "ข้ามไปหน้าหลัก" (allowed while LICENSE_REQUIRED is false) lasts until that account signs out
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell, type TabDef } from './components/AppShell';
@@ -12,7 +13,7 @@ import { AuthGate } from './components/AuthGate';
 import { ConsentScreen } from './components/Consent';
 import { ClockIcon, IdCardIcon, TruckIcon, VestIcon } from './components/Icons';
 import { getMyLicense, isTestMode, type Me } from './lib/api';
-import { LICENSE_REQUIRED, type LicenseInfo } from './lib/license';
+import { LICENSE_REQUIRED, readLicenseSkip, writeLicenseSkip, type LicenseInfo } from './lib/license';
 import { errMsg } from './lib/utils';
 import { LicenseBanner, LicenseOnboarding, LicensePage } from './pages/LicensePage';
 import { PpePage } from './pages/PpePage';
@@ -25,13 +26,10 @@ const WORK_TABS: TabDef[] = [
   { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: (c) => <TimeActivitiesPage goVehicle={() => c.go('veh')} /> },
 ];
 
-/** "ข้ามไปหน้าหลัก" is remembered until the browser tab is closed (asked again on the next visit). */
-const SKIP_KEY = 'license-skipped';
-const readSkip = () => { try { return sessionStorage.getItem(SKIP_KEY) === '1'; } catch { return false; } };
-
 function StaffShell({ me, onLogout, onboarding }: { me: Me | null; onLogout?: () => void; onboarding: boolean }) {
   const [lic, setLic] = useState<LicenseInfo | null | undefined>(undefined);
-  const [skipped, setSkipped] = useState(() => !LICENSE_REQUIRED && readSkip());
+  // "ข้ามไปหน้าหลัก" counts for this account until it signs out (see lib/license.ts)
+  const [skipped, setSkipped] = useState(() => !LICENSE_REQUIRED && readLicenseSkip(me?.id));
   const [loadError, setLoadError] = useState('');
   const loadLicense = useCallback(() => {
     setLoadError('');
@@ -59,10 +57,7 @@ function StaffShell({ me, onLogout, onboarding }: { me: Me | null; onLogout?: ()
       );
     }
     if (!lic?.license && !skipped) {
-      const skip = LICENSE_REQUIRED ? undefined : () => {
-        try { sessionStorage.setItem(SKIP_KEY, '1'); } catch { /* storage unavailable */ }
-        setSkipped(true);
-      };
+      const skip = LICENSE_REQUIRED ? undefined : () => { writeLicenseSkip(me?.id); setSkipped(true); };
       return <LicenseOnboarding onSaved={setLic} onLogout={() => onLogout?.()} onSkip={skip} />;
     }
   }

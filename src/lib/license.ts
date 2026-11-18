@@ -67,3 +67,24 @@ export function statusText(l: Pick<DriverLicense, 'status' | 'days_left'> | null
   if (d === 0) return 'หมดอายุวันนี้';
   return `เหลืออีก ${d} วัน`;
 }
+
+/**
+ * "ข้ามไปหน้าหลัก" on the licence screen: remembered for this account in this browser tab only
+ * (a page refresh keeps it), and cleared on every sign-in and sign-out — so after logging in,
+ * anyone without a licence sees the licence screen again, whoever used the tab before.
+ */
+const SKIP_PREFIX = 'license-skipped';
+const skipKey = (userId: string) => `${SKIP_PREFIX}:${userId}`;
+export function readLicenseSkip(userId: string | undefined): boolean {
+  if (!userId) return false;
+  try { return sessionStorage.getItem(skipKey(userId)) === '1'; } catch { return false; }
+}
+export function writeLicenseSkip(userId: string | undefined) {
+  if (!userId) return;
+  try { sessionStorage.setItem(skipKey(userId), '1'); } catch { /* storage unavailable */ }
+}
+export function clearLicenseSkips() {
+  try {
+    for (const k of Object.keys(sessionStorage)) if (k === SKIP_PREFIX || k.startsWith(SKIP_PREFIX + ':')) sessionStorage.removeItem(k);
+  } catch { /* storage unavailable */ }
+}

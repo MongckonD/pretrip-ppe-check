@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { UNAUTHORIZED_EVENT, authStatus, logout, type Me } from '../lib/api';
+import { clearLicenseSkips } from '../lib/license';
 import { IDLE_NOTICE, NOTICE_KEY, useIdleSignOut } from '../lib/session';
 import { errMsg } from '../lib/utils';
 import { ChangePasswordForm, LoginForm, SetupForm } from './Auth';
@@ -34,6 +35,7 @@ export function AuthGate({ area, children }: { area: 'staff' | 'admin'; children
     // any API call that finds the session gone sends the user back to the login screen
     const onLost = () => {
       setNotice('หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
+      clearLicenseSkips();
       setState((s) => (s ? { ...s, user: null } : s));
     };
     window.addEventListener(UNAUTHORIZED_EVENT, onLost);
@@ -53,11 +55,13 @@ export function AuthGate({ area, children }: { area: 'staff' | 'admin'; children
       window.location.replace(ADMIN_HOME);
       return;
     }
+    clearLicenseSkips(); // a fresh sign-in asks for the licence again
     setNotice('');
     setState({ needs_setup: false, user });
   };
   const signOut = async (why = '') => {
     await logout().catch(() => { /* cookie is cleared anyway on next login */ });
+    clearLicenseSkips();
     setNotice(why);
     if (area === 'admin') {
       try { if (why) sessionStorage.setItem(NOTICE_KEY, why); } catch { /* ignore */ }
