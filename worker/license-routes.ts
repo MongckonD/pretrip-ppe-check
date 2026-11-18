@@ -107,6 +107,11 @@ export async function saveMyLicense({ env, actor, req, exec }: Ctx) {
     if (y < 2000 || y > 2100) throw bad('วันหมดอายุไม่ถูกต้อง (ใช้ปี ค.ศ.)');
   }
   const ocrUsed = field(form, 'ocr_used') === '1' ? 1 : 0;
+  // one current licence number per account (the other account is not named to staff)
+  const taken = await env.DB.prepare(
+    `SELECT 1 FROM driver_licenses WHERE license_no = ?1 AND replaced_at IS NULL AND user_id <> ?2`,
+  ).bind(licenseNo, actor.id).first();
+  if (taken) throw conflict('เลขที่ใบขับขี่นี้ถูกใช้กับบัญชีอื่นแล้ว — ติดต่อผู้ดูแลระบบ');
 
   const photo = form.get('photo');
   if (!photo || typeof photo === 'string') throw bad('กรุณาถ่ายรูปใบขับขี่');

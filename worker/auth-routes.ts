@@ -190,10 +190,14 @@ export async function listUsers({ env, actor }: Ctx) {
   return json(results.map(userOut));
 }
 
-async function assertEmployee(env: Env, id: string | null) {
+/** The employee must exist and must not already be linked to another account (one employee = one account). */
+async function assertEmployee(env: Env, id: string | null, userIdSelf: string) {
   if (!id) return;
   const e = await env.DB.prepare(`SELECT id FROM employees WHERE id = ?1`).bind(id).first();
   if (!e) throw bad(`ไม่พบรหัสพนักงาน ${id}`);
+  const other = await env.DB.prepare(`SELECT id FROM users WHERE employee_id = ?1 AND id <> ?2`)
+    .bind(id, userIdSelf).first<{ id: string }>();
+  if (other) throw conflict(`พนักงาน ${id} ผูกกับบัญชี ${other.id} อยู่แล้ว — พนักงาน 1 คนมีได้บัญชีเดียว (ยกเลิกการผูกที่บัญชีเดิมก่อน)`);
 }
 
 export async function createUser({ env, actor, req }: Ctx) {
@@ -204,10 +208,10 @@ export async function createUser({ env, actor, req }: Ctx) {
   const role = b.role ?? 'user';
   if (!isRole(role)) throw bad('สิทธิ์ต้องเป็น admin หรือ user');
   const emp = optEmployeeId(b.employee_id, 'รหัสพนักงาน');
-  await assertEmployee(env, emp);
   const pw = reqPassword(b.password, id);
   const exists = await env.DB.prepare(`SELECT id FROM users WHERE id = ?1`).bind(id).first();
   if (exists) throw conflict(`มีผู้ใช้ ${id} อยู่แล้ว`);
+  await assertEmployee(env, emp, id);
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO users (id, display_name, role, employee_id, password_hash, must_change_password) VALUES (?1, ?2, ?3, ?4, ?5, 0)`,
@@ -235,7 +239,7 @@ export async function updateUser({ env, actor, req, params }: Ctx) {
   if (!isRole(role)) throw bad('สิทธิ์ต้องเป็น admin หรือ user');
   const active = b.active === undefined ? cur.active === 1 : bool(b.active, 'สถานะใช้งาน');
   const emp = b.employee_id === undefined ? undefined : optEmployeeId(b.employee_id, 'รหัสพนักงาน');
-  if (emp !== undefined) await assertEmployee(env, emp);
+  if (emp !== undefined) await assertEmployee(env, emp, id);
   const unlock = b.unlock === true;
 
   const losesAdmin = cur.role === 'admin' && cur.active === 1 && (role !== 'admin' || !active);
@@ -257,6 +261,34 @@ export async function updateUser({ env, actor, req, params }: Ctx) {
   // a deactivated user, or one whose role changed, is signed out everywhere
   if (!active || role !== cur.role) stmts.push(env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?1`).bind(id));
   await env.DB.batch(stmts);
+  return json({ ok: true });
+}
+
+/**
+ * Permanently delete an account (admin only). Its sessions, consent records and driver licences (with the
+ * licence photos in R2) go with it; inspection / PPE / work records stay, with "saved by" left empty.
+ * Not allowed: your own account, the last active admin, or an account that has approved records.
+ */
+export async function deleteUser({ env, actor, params, exec }: Ctx) {
+  requireRole(actor, 'admin');
+  const id = reqUserId(decodeURIComponent(params[0]));
+  if (id === actor.id) throw bad('ลบบัญชีของตัวเองไม่ได้');
+  const cur = await env.DB.prepare(`SELECT role, active FROM users WHERE id = ?1`).bind(id).first<{ role: Role; active: number }>();
+  if (!cur) throw notFound('ไม่พบผู้ใช้นี้ (อาจถูกลบไปแล้ว)');
+  if (cur.role === 'admin' && cur.active === 1) await assertAdminRemains(env, id);
+  const approved = await env.DB.prepare(
+    `SELECT (SELECT count(*) FROM vehicle_inspections WHERE approved_by = ?1) + (SELECT count(*) FROM ppe_inspections WHERE approved_by = ?1) AS n`,
+  ).bind(id).first<{ n: number }>();
+  if (approved?.n) throw conflict(`บัญชี ${id} เคยอนุมัติรายการไว้ ${approved.n} รายการ จึงลบไม่ได้ — ใช้ "ปิดบัญชี" แทน`);
+
+  const { results: photos } = await env.DB.prepare(
+    `SELECT photo_r2_key AS k FROM driver_licenses WHERE user_id = ?1 AND photo_r2_key IS NOT NULL`,
+  ).bind(id).all<{ k: string }>();
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM users WHERE id = ?1`).bind(id),
+    audit(env, actor.id, 'delete', 'users', id, { role: cur.role }),
+  ]);
+  if (photos.length) exec.waitUntil(env.LICENSES.delete(photos.map((p) => p.k)));
   return json({ ok: true });
 }
 

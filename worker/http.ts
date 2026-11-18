@@ -57,6 +57,9 @@ export function mapDbError(e: unknown): HttpError | null {
   if (msg.includes('UNIQUE constraint failed: ppe_inspections')) return conflict('พนักงานคนนี้มีบันทึก PPE ของวันนี้แล้ว');
   if (msg.includes('UNIQUE constraint failed: vehicle_inspection_photos.r2_key')) return conflict('รูปนี้ถูกใช้ในบันทึกอื่นแล้ว');
   if (msg.includes('UNIQUE constraint failed: vehicles')) return conflict('ทะเบียนนี้มีอยู่แล้ว');
+  if (msg.includes('UNIQUE constraint failed: users.employee_id')) return conflict('พนักงานคนนี้ผูกกับบัญชีอื่นอยู่แล้ว — พนักงาน 1 คนมีได้บัญชีเดียว');
+  if (msg.includes('UNIQUE constraint failed: users.id')) return conflict('มีชื่อผู้ใช้นี้อยู่แล้ว');
+  if (msg.includes('UNIQUE constraint failed: driver_licenses.license_no')) return conflict('เลขที่ใบขับขี่นี้ถูกใช้กับบัญชีอื่นแล้ว — ติดต่อผู้ดูแลระบบ');
   if (msg.includes('FOREIGN KEY constraint failed')) return conflict('ข้อมูลอ้างอิงไม่ถูกต้อง หรือมีประวัติการใช้งานอยู่');
   if (msg.includes('CHECK constraint failed')) return bad('ข้อมูลไม่ผ่านเงื่อนไขของระบบ');
   if (msg.includes('NOT NULL constraint failed')) return bad('ข้อมูลที่จำเป็นไม่ครบ');

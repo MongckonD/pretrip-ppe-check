@@ -6,7 +6,7 @@
  */
 import { requireStaff } from './auth';
 import { bad, conflict, json, notFound, readJson } from './http';
-import { NOW_SQL, audit, dateFilter, findVehicleByPlate, parse, type Ctx } from './routes';
+import { NOW_SQL, assertMyCheck, audit, dateFilter, findVehicleByPlate, parse, type CheckOwner, type Ctx } from './routes';
 import { plate, todayTH } from './validate';
 
 type Row = Record<string, unknown>;
@@ -56,9 +56,11 @@ export async function startWork({ env, actor, req }: Ctx) {
   const date = todayTH();
   const vehicle = await findVehicleByPlate(env, p);
   if (!vehicle) throw bad(`ยังไม่ได้ลงทะเบียนรถ ${p} — เพิ่มได้ที่แท็บตั้งค่า`);
-  const vi = await env.DB.prepare(`SELECT id, dman_id FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2`)
-    .bind(date, vehicle.id).first<{ id: string; dman_id: string }>();
+  const vi = await env.DB.prepare(
+    `SELECT id, created_by, dman_id, helper1_id, helper2_id FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2`,
+  ).bind(date, vehicle.id).first<CheckOwner & { id: string }>();
   if (!vi) throw bad(`ยังไม่ได้ตรวจรถทะเบียน ${vehicle.plate} วันนี้ — ตรวจรถก่อนแล้วค่อยเริ่มการทำงาน`);
+  assertMyCheck(actor, vi, vehicle.plate);
   const cur = await env.DB.prepare(`SELECT id FROM trip_activities WHERE activity_date = ?1 AND vehicle_id = ?2`)
     .bind(date, vehicle.id).first<{ id: string }>();
   if (cur) throw conflict(`รถ ${vehicle.plate} เริ่มการทำงานของวันนี้ไปแล้ว`);
@@ -80,9 +82,15 @@ export async function startWork({ env, actor, req }: Ctx) {
 export async function endWork({ env, actor, params }: Ctx) {
   requireStaff(actor);
   const id = decodeURIComponent(params[0]);
-  const cur = await env.DB.prepare(`SELECT work_ended_at FROM trip_activities WHERE id = ?1`)
-    .bind(id).first<{ work_ended_at: string | null }>();
+  const cur = await env.DB.prepare(
+    `SELECT t.work_ended_at, t.created_by AS trip_by, v.plate, vi.created_by, coalesce(vi.dman_id, t.dman_id) AS dman_id, vi.helper1_id, vi.helper2_id
+     FROM trip_activities t JOIN vehicles v ON v.id = t.vehicle_id
+     LEFT JOIN vehicle_inspections vi ON vi.id = t.vehicle_inspection_id
+     WHERE t.id = ?1`,
+  ).bind(id).first<CheckOwner & { work_ended_at: string | null; trip_by: string | null; plate: string }>();
   if (!cur) throw notFound('ไม่พบบันทึกนี้ (อาจถูกลบไปแล้ว)');
+  // whoever started the clock may stop it; otherwise the same team rule as the start
+  if (cur.trip_by !== actor.id) assertMyCheck(actor, cur, cur.plate);
   if (cur.work_ended_at) throw conflict('จบงานไปแล้ว');
   const now = new Date().toISOString();
   await env.DB.batch([

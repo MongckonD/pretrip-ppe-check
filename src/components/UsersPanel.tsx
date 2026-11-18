@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { createUser, listUsers, resetUserPassword, updateUser, type AppUser, type Role } from '../lib/api';
+import { createUser, deleteUser, listUsers, resetUserPassword, updateUser, type AppUser, type Role } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { ROLE_LABEL, useMe } from './Auth';
 import { useMaster } from './MasterContext';
@@ -44,6 +44,34 @@ export function UsersPanel() {
     finally { setBusy(false); }
   }
 
+  /** employee id → the account it is linked to */
+  const linkedTo = new Map(users.filter((u) => u.employee_id).map((u) => [u.employee_id as string, u.id]));
+  /** employee options; ones linked to another account are shown but cannot be picked */
+  const empOptions = (self?: string) => employees.map((e) => {
+    const owner = linkedTo.get(e.id);
+    const taken = !!owner && owner !== self;
+    return (
+      <option key={e.id} value={e.id} disabled={taken}>
+        {e.id}{e.name && ` · ${e.name}`}{taken ? ` — ผูกกับ ${owner} แล้ว` : ''}
+      </option>
+    );
+  });
+  const formTaken = form.employee_id ? linkedTo.get(form.employee_id) : undefined;
+
+  /** permanent delete — the admin must type the username to confirm */
+  async function remove(u: AppUser) {
+    const typed = window.prompt(
+      `ลบบัญชี "${u.id}" ถาวร — กู้คืนไม่ได้\n\n`
+      + `• ลบ: บัญชี การเข้าสู่ระบบ ความยินยอม และใบขับขี่ (รวมรูป) ของบัญชีนี้\n`
+      + `• ยังอยู่: บันทึกตรวจรถ / PPE / เวลาทำงาน แต่จะไม่แสดงว่าบัญชีนี้เป็นผู้บันทึก\n`
+      + `ถ้าแค่ไม่ให้เข้าใช้ ให้กดปุ่ม "ใช้งาน" เพื่อปิดบัญชีแทน\n\n`
+      + `พิมพ์ชื่อผู้ใช้ ${u.id} เพื่อยืนยันการลบ`,
+    );
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== u.id) return toast('ชื่อผู้ใช้ไม่ตรง — ยังไม่ได้ลบ');
+    await run(() => deleteUser(u.id), `ลบบัญชี ${u.id} แล้ว`);
+  }
+
   async function doReset(e: FormEvent) {
     e.preventDefault();
     if (!resetFor) return;
@@ -82,8 +110,15 @@ export function UsersPanel() {
               onClick={() => run(() => updateUser(u.id, { active: !u.active }), u.active ? 'ปิดบัญชีแล้ว' : 'เปิดบัญชีแล้ว')}>
               {u.active ? 'ใช้งาน' : 'ปิดอยู่'}
             </button>
+            <select aria-label={`พนักงานที่ผูกกับ ${u.id}`} value={u.employee_id ?? ''}
+              onChange={(e) => run(() => updateUser(u.id, { employee_id: e.target.value }),
+                e.target.value ? `ผูก ${u.id} กับพนักงาน ${e.target.value} แล้ว` : `ยกเลิกการผูกพนักงานของ ${u.id} แล้ว`)}>
+              <option value="">ไม่ผูกพนักงาน</option>
+              {empOptions(u.id)}
+            </select>
             {u.locked && <button className="btn ghost sm" onClick={() => run(() => updateUser(u.id, { unlock: true }), 'ปลดล็อกแล้ว')}>ปลดล็อก</button>}
             <button className="btn ghost sm" onClick={() => { setResetFor(u.id); setResetPw(''); }}>ตั้งรหัสผ่านใหม่</button>
+            {u.id !== me?.id && <button className="btn danger sm" onClick={() => remove(u)}>ลบผู้ใช้</button>}
           </div>
           {resetFor === u.id && (
             <form className="row mt-s" onSubmit={doReset}>
@@ -114,8 +149,9 @@ export function UsersPanel() {
           <label>ผูกกับพนักงาน
             <select value={form.employee_id} onChange={(e) => setForm({ ...form, employee_id: e.target.value })}>
               <option value="">ไม่ผูก</option>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.id}{e.name && ` · ${e.name}`}</option>)}
+              {empOptions()}
             </select>
+            {formTaken && <span className="error-text">พนักงานนี้ผูกกับ {formTaken} แล้ว</span>}
           </label>
           <label>รหัสผ่าน
             <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -124,7 +160,7 @@ export function UsersPanel() {
         </div>
         <div className="row spread mt-s">
           <span className="note">รหัสผ่านนี้ใช้ login ได้เลย · ผู้ใช้เปลี่ยนเองภายหลังได้ที่ปุ่ม "เปลี่ยนรหัสผ่าน"</span>
-          <button className="btn sm" type="submit" disabled={busy}>{busy ? 'กำลังเพิ่ม…' : 'เพิ่มผู้ใช้'}</button>
+          <button className="btn sm" type="submit" disabled={busy || !!formTaken}>{busy ? 'กำลังเพิ่ม…' : 'เพิ่มผู้ใช้'}</button>
         </div>
       </form>
     </section>

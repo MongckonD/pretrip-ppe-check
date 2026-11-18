@@ -1,7 +1,9 @@
 /**
  * Today's vehicle checks, shared by the PPE and Time activities tabs.
  * Both take the vehicle and the team from the vehicle check instead of asking again:
- *   - the latest check saved by me is picked first (any one in test mode)
+ *   - only my own team's checks: saved by me, or where my employee ID is the D-Man / a helper
+ *     (another team's vehicle never shows up here; the Worker refuses it too). Test mode has no login: all checks.
+ *   - the latest one is picked first
  *   - with several checks today, a row of buttons lets you switch vehicle
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -23,16 +25,18 @@ export function useTodayChecks(day: string) {
   const [selId, setSelId] = useState('');
 
   const reload = useCallback(async () => {
-    try { setChecks([...(await listVehicleInspections({ date: day }))].sort(newest)); }
-    catch (e) { setChecks([]); toast('โหลดข้อมูลการตรวจรถไม่สำเร็จ: ' + errMsg(e)); }
-  }, [day, toast]);
+    try {
+      const mine = (c: VehicleInspection) => !me || c.created_by === me.id
+        || (!!me.employee_id && [c.dman_id, c.helper1_id, c.helper2_id].includes(me.employee_id));
+      setChecks((await listVehicleInspections({ date: day })).filter(mine).sort(newest));
+    } catch (e) { setChecks([]); toast('โหลดข้อมูลการตรวจรถไม่สำเร็จ: ' + errMsg(e)); }
+  }, [day, toast, me]);
   useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
     if (!checks?.length || checks.some((c) => c.id === selId)) return;
-    const mine = me ? checks.find((c) => c.created_by === me.id) : undefined;
-    setSelId((mine ?? checks[0]).id);
-  }, [checks, me, selId]);
+    setSelId(checks[0].id);
+  }, [checks, selId]);
 
   const check = checks?.find((c) => c.id === selId) ?? null;
   /** pick the check of this plate (e.g. when opening a saved record) */
@@ -66,7 +70,7 @@ export function NoCheckYet({ title, then, goVehicle }: { title: string; then: st
   return (
     <section className="panel ppe-wait">
       <h2>{title}</h2>
-      <p>ยังไม่มีการตรวจรถของวันนี้ — ตรวจรถและเลือกทีมงานที่แท็บ <b>ตรวจรถ</b> ก่อน แล้ว{then}</p>
+      <p>วันนี้คุณยังไม่มีรถที่ตรวจแล้ว (รถที่คุณตรวจเอง หรือที่คุณอยู่ในทีม) — ตรวจรถและเลือกทีมงานที่แท็บ <b>ตรวจรถ</b> ก่อน แล้ว{then}</p>
       {goVehicle && <button className="btn" onClick={goVehicle}>ไปตรวจรถ</button>}
     </section>
   );

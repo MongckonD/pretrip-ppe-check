@@ -1,6 +1,6 @@
 /** API route handlers. Each returns a Response or throws HttpError. */
 import { type Actor, requireRole, requireStaff } from './auth';
-import { HttpError, bad, conflict, json, notFound, readJson } from './http';
+import { HttpError, bad, conflict, forbidden, json, notFound, readJson } from './http';
 import {
   PHOTO_KEY_RE, bool, employeeId, isDate, isMonth, monthBounds, obj, optEmployeeId,
   optMileage, nowTimeTH, photoKey, plate, reqDate, str, text, todayTH,
@@ -460,6 +460,17 @@ export async function listPpeInspections({ env, url }: Ctx) {
   return json(results.map(ppeOut));
 }
 
+/** who a vehicle check belongs to: the account that saved it and the crew on it */
+export interface CheckOwner { created_by: string | null; dman_id: string; helper1_id: string | null; helper2_id: string | null }
+
+/** Staff work only on their own team's check: one they saved, or one where they are the D-Man or a helper. */
+export function assertMyCheck(actor: Actor, c: CheckOwner, plateText: string) {
+  if (actor.role === 'admin') return;
+  if (c.created_by === actor.id) return;
+  if (actor.employee_id && [c.dman_id, c.helper1_id, c.helper2_id].includes(actor.employee_id)) return;
+  throw forbidden(`รถ ${plateText} วันนี้ไม่ได้อยู่ในทีมของคุณ — ทำได้เฉพาะรถที่คุณตรวจเอง หรือที่คุณอยู่ในทีม`);
+}
+
 export async function savePpeInspections({ env, actor, req }: Ctx) {
   requireStaff(actor);
   const b = await readJson(req);
@@ -488,9 +499,10 @@ export async function savePpeInspections({ env, actor, req }: Ctx) {
   const vehicle = await findVehicleByPlate(env, p);
   if (!vehicle) throw bad(`ยังไม่ได้ลงทะเบียนรถ ${p} — เพิ่มได้ที่แท็บตั้งค่า`);
   const vi = await env.DB.prepare(
-    `SELECT dman_id, helper1_id, helper2_id FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2`,
-  ).bind(date, vehicle.id).first<{ dman_id: string; helper1_id: string | null; helper2_id: string | null }>();
+    `SELECT created_by, dman_id, helper1_id, helper2_id FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2`,
+  ).bind(date, vehicle.id).first<CheckOwner>();
   if (!vi) throw bad(`ยังไม่ได้ตรวจรถทะเบียน ${vehicle.plate} วันนี้ — ตรวจรถก่อนแล้วค่อยตรวจ PPE`);
+  assertMyCheck(actor, vi, vehicle.plate);
   const crew = new Set([vi.dman_id, vi.helper1_id, vi.helper2_id].filter((x): x is string => !!x));
   const outsider = emps.find((e) => !crew.has(e));
   if (outsider) throw bad(`${outsider} ไม่ได้อยู่ในทีมงานของรถ ${vehicle.plate} วันนี้ (ตรวจ PPE ได้เฉพาะทีมที่เลือกตอนตรวจรถ)`);

@@ -93,6 +93,9 @@ export async function createUser(u: { id: string; display_name: string; role: Ro
 export async function updateUser(id: string, patch: Partial<{ display_name: string; role: Role; active: boolean; employee_id: string; unlock: boolean }>) {
   await call('PUT', `/api/users/${encodeURIComponent(id)}`, patch);
 }
+export async function deleteUser(id: string) {
+  await call('DELETE', `/api/users/${encodeURIComponent(id)}`);
+}
 export async function resetUserPassword(id: string, password: string) {
   await call('POST', `/api/users/${encodeURIComponent(id)}/reset-password`, { password });
 }

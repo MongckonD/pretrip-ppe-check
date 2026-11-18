@@ -638,3 +638,5 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .ppe-sum-list li { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
 .ppe-sum-list li:first-child { border-top: 0; }
 .ppe-sum-miss { font-size: 13px; color: var(--fail); margin-top: 2px; }
+
+.error-text { display: block; margin-top: 4px; color: var(--fail); font-size: 12px; font-weight: 600; }

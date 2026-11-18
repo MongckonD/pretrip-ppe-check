@@ -25,6 +25,6 @@ export const resetDemo = mock.resetDemo;
 // login & user administration exist only with the real backend
 export const {
   authStatus, login, setupAdmin, logout, changePassword,
-  listUsers, createUser, updateUser, resetUserPassword, UNAUTHORIZED_EVENT, acceptConsent, keepAlive,
+  listUsers, createUser, updateUser, deleteUser, resetUserPassword, UNAUTHORIZED_EVENT, acceptConsent, keepAlive,
 } = cloud;
 export type { AppUser, Me, Role } from './api.cloudflare';

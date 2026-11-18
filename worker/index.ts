@@ -48,6 +48,7 @@ const ROUTES: Route[] = [
   { m: 'GET', re: /^\/api\/users$/, h: a.listUsers },
   { m: 'POST', re: /^\/api\/users$/, h: a.createUser },
   { m: 'PUT', re: /^\/api\/users\/([^/]+)$/, h: a.updateUser },
+  { m: 'DELETE', re: /^\/api\/users\/([^/]+)$/, h: a.deleteUser },
   { m: 'POST', re: /^\/api\/users\/([^/]+)\/reset-password$/, h: a.resetPassword },
 
   { m: 'GET', re: /^\/api\/master$/, h: r.getMaster },
