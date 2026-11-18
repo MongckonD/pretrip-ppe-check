@@ -3,8 +3,9 @@
  * The future Cloudflare backend (api.cloudflare.ts → Worker → D1/R2, see cloudflare/) must expose
  * the same functions so the UI does not change when the real backend is switched on.
  */
+import { failedDefects } from './api.cloudflare';
 import type {
-  Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity, TripForm,
+  Defect, Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity, TripForm,
 } from './types';
 import { licenseStatus, type DriverLicense, type LicenseForm, type LicenseInfo, type LicenseRow } from './license';
 import { AREA_TYPES, CHECK_ITEMS, PHOTO_SLOTS, PPE_ITEMS, ROLES } from './seed';
@@ -15,6 +16,7 @@ interface VehRow {
   id: string; inspect_date: string; inspect_time: string | null; dman_id: string;
   helper1_id: string | null; helper2_id: string | null; plate: string; mileage: number | null; note: string;
   results: Record<string, VehResult>; photos: Record<string, string>;
+  defects?: Record<string, Defect>;
 }
 interface PpeRow {
   id: string; inspect_date: string; employee_id: string; inspector_id: string; plate: string;
@@ -22,6 +24,7 @@ interface PpeRow {
 }
 interface TripRow {
   id: string; activity_date: string; depart_time: string; vehicle_id: string; dman_id: string; areas: string[]; note: string;
+  work_started_at?: string | null; work_ended_at?: string | null;
 }
 interface Db { employees: Employee[]; vehicles: Vehicle[]; veh: VehRow[]; ppe: PpeRow[]; trips: TripRow[] }
 
@@ -198,7 +201,11 @@ export async function saveVehicleInspection(f: VehicleForm) {
     helper1_id: f.h1 || null, helper2_id: f.h2 || null, plate: f.plate.trim(),
     mileage: f.mileage.trim() ? Number(f.mileage) : null, note: f.note,
     results: Object.fromEntries(Object.entries(f.results).map(([k, v]) => [k, v])), photos: { ...f.photos },
+    defects: failedDefects(f),
   };
+  // same rule as the API: an item marked ไม่ผ่าน needs a note
+  const noNote = Object.entries(row.defects ?? {}).find(([, d]) => !d.note);
+  if (noNote) throw new Error(`ระบุหมายเหตุของข้อ ${noNote[0]} ที่ไม่ผ่าน`);
   // same rule as the vehicle_inspections_crew_distinct check
   const crew = [row.dman_id, row.helper1_id, row.helper2_id].filter(Boolean);
   if (new Set(crew).size !== crew.length) {
@@ -307,6 +314,9 @@ function tripSummary(t: TripRow, db: Db): TripActivity {
     vehicle_inspection_id: vi?.id ?? null, inspected: !!vi,
     area_codes: ordered.map((a) => a.code), area_names: ordered.map((a) => a.name).join(', '), area_count: ordered.length,
     note: t.note,
+    work_started_at: t.work_started_at ?? null, work_ended_at: t.work_ended_at ?? null,
+    work_minutes: t.work_started_at && t.work_ended_at
+      ? Math.round((Date.parse(t.work_ended_at) - Date.parse(t.work_started_at)) / 60_000) : null,
   };
 }
 
@@ -343,6 +353,33 @@ export async function deleteTripActivity(id: string) {
   const db = load();
   db.trips = db.trips.filter((t) => t.id !== id);
   persist();
+}
+
+export async function startWork(plate: string, time: string) {
+  await tick();
+  const db = load();
+  const v = db.vehicles.find((x) => x.plate === plate.trim());
+  if (!v) throw new Error(`ยังไม่ได้ลงทะเบียนรถ ${plate}`);
+  const vi = db.veh.find((r) => r.inspect_date === today() && r.plate === v.plate);
+  if (!vi) throw new Error(`ยังไม่ได้ตรวจรถทะเบียน ${v.plate} วันนี้ — ตรวจรถก่อนแล้วค่อยเริ่มการทำงาน`);
+  let t = db.trips.find((x) => x.activity_date === today() && x.vehicle_id === v.id);
+  if (t?.work_started_at) throw new Error(`รถ ${v.plate} เริ่มการทำงานของวันนี้ไปแล้ว`);
+  const now = new Date().toISOString();
+  if (!t) db.trips.push((t = { id: uuid(), activity_date: today(), depart_time: `${time}:00`, vehicle_id: v.id, dman_id: vi.dman_id, areas: [], note: '' }));
+  Object.assign(t, { work_started_at: now, depart_time: `${time}:00`, dman_id: vi.dman_id });
+  persist();
+  return { id: t.id, work_started_at: now };
+}
+
+export async function endWork(id: string) {
+  await tick();
+  const t = load().trips.find((x) => x.id === id);
+  if (!t) throw new Error('ไม่พบบันทึกนี้');
+  if (!t.work_started_at) throw new Error('ยังไม่ได้กดเริ่มการทำงาน');
+  if (t.work_ended_at) throw new Error('จบงานไปแล้ว');
+  t.work_ended_at = new Date().toISOString();
+  persist();
+  return { id, work_ended_at: t.work_ended_at };
 }
 
 /* ---------- driver licence (test mode: one licence for "me" kept in this browser; photo kept in memory) ---------- */

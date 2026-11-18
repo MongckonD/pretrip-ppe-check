@@ -534,3 +534,93 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .lic-table tr.st-expiring td:first-child { box-shadow: 3px 0 0 #E0A100 inset; }
 .lic-skip { width: 100%; }
 .login-notice { padding: 10px 12px; border-radius: 8px; background: #FFF4DB; color: #8A5A00; font-size: 14px; font-weight: 600; }
+
+/* ---------- vehicle check: an item marked ไม่ผ่าน opens a note + photo box ---------- */
+.check.failed { background: linear-gradient(90deg, var(--fail-bg), transparent 70%); border-radius: 8px; padding-inline: 8px; }
+.defect {
+  grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 10px; align-items: start;
+  margin-top: 6px; padding: 10px; border: 1px solid #F4B3B6; border-radius: 10px; background: var(--surface);
+}
+.defect textarea { min-height: 64px; }
+.defect .req { color: var(--fail); font-style: normal; }
+.defect-photo { display: grid; gap: 6px; }
+.defect-photo .box {
+  position: relative; aspect-ratio: 4 / 3; border: 1px dashed #E7A3A6; border-radius: 10px; background: var(--soft);
+  display: grid; place-items: center; overflow: hidden; cursor: pointer; text-align: center; padding: 6px;
+  font-size: 12px; font-weight: 600; color: var(--fail);
+}
+.defect-photo .box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.defect-photo input[type='file'] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; padding: 0; min-height: 0; }
+.defect-photo .btn { justify-self: start; }
+@media (max-width: 520px) { .defect { grid-template-columns: minmax(0, 1fr); } .defect-photo .box { max-width: 170px; } }
+
+/* admin home: failed items with note + photo */
+.defect-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.defect-list li { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 8px 10px; border-radius: 8px; background: var(--fail-bg); }
+.defect-text { display: grid; gap: 2px; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.defect-text b { color: var(--fail); }
+.defect-list img { width: 72px; height: 54px; object-fit: cover; border-radius: 6px; display: block; flex: none; }
+
+/* read-only fields (vehicle check date / time: set by the system) */
+.ro { display: grid; gap: 4px; min-width: 0; }
+.ro-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.ro-value {
+  min-height: 44px; display: flex; align-items: center; padding: 9px 10px; border-radius: 8px;
+  border: 1px dashed var(--line); background: transparent; font-size: 16px; font-weight: 600; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; user-select: none;
+}
+
+/* PPE: pick which of today's vehicle checks (when there is more than one) */
+.veh-pick { display: grid; gap: 6px; margin-bottom: 12px; }
+.veh-pick-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.veh-pick-list button {
+  display: grid; gap: 2px; text-align: left; font: inherit; cursor: pointer; padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--soft); color: var(--ink); min-width: 140px;
+}
+.veh-pick-list button span { font-size: 12px; color: var(--muted); }
+.veh-pick-list button[aria-pressed='true'] { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 1px var(--brand) inset; }
+.ppe-wait p { margin: 0 0 12px; color: var(--muted); }
+
+/* ---------- summary after sending a vehicle check ---------- */
+.sum { display: grid; gap: 14px; max-width: 760px; }
+.sum-status { display: flex; gap: 12px; align-items: center; padding: 14px 16px; border-radius: 12px; border: 1px solid; }
+.sum-status.wait { background: #FFF4DB; border-color: #F2D48A; color: #6B4600; }
+.sum-status.ok { background: var(--pass-bg); border-color: #9FD3B8; color: var(--pass); }
+.sum-status b { display: block; font-size: 16px; }
+.sum-status span { font-size: 13px; }
+.sum-icon { font-size: 26px; line-height: 1; }
+.sum-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 0; }
+.sum-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 14px; }
+.sum-meta dt { color: var(--muted); }
+.sum-meta dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.sum-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 520px) { .sum-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sum-count { display: grid; gap: 2px; padding: 12px; border-radius: 10px; background: var(--soft); border: 1px solid var(--line); text-align: center; }
+.sum-count b { font-family: var(--mono); font-size: 28px; line-height: 1.1; }
+.sum-count span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.sum-count.pass { background: var(--pass-bg); border-color: #9FD3B8; }
+.sum-count.pass b { color: var(--pass); }
+.sum-count.fail { background: var(--fail-bg); border-color: #F4B3B6; }
+.sum-count.fail b { color: var(--fail); }
+.sum-sub { margin: 0; font-size: 15px; }
+.sum-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.sum-actions .btn { flex: 1 1 200px; padding-block: 13px; }
+.flush-note { margin: 0; }
+
+/* ---------- Time activities: work clock ---------- */
+.work-btn { width: 100%; padding-block: 14px; font-size: 16px; }
+.work-btn.start { margin-top: 12px; background: var(--pass); }
+.work-btn.start:hover:not(:disabled) { background: #146a47; }
+.work-btn.end { background: var(--ink); }
+.work-btn.end:hover:not(:disabled) { background: #000; }
+.work-started { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--pass-bg); color: var(--pass); font-weight: 600; }
+.work-timer { display: grid; justify-items: center; gap: 2px; padding: 16px; margin-bottom: 12px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); }
+.work-timer b { font-family: var(--mono); font-size: 40px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--ink); }
+.work-timer span { font-size: 13px; color: var(--muted); }
+.work-done { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.work-done > div { display: grid; gap: 2px; padding: 12px; border-radius: 10px; background: var(--soft); border: 1px solid var(--line); text-align: center; }
+.work-done span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.work-done b { font-size: 18px; }
+.work-done .total { background: var(--pass-bg); border-color: #9FD3B8; }
+.work-done .total b { color: var(--pass); }
+@media (max-width: 420px) { .work-done { grid-template-columns: 1fr 1fr; } .work-done .total { grid-column: 1 / -1; } }

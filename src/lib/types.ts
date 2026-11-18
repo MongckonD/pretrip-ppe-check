@@ -37,6 +37,8 @@ export interface VehicleInspection {
   month: string;
   results: Record<string, VehResult>;
   photos: Record<string, string>;
+  /** failed items: note (required) + photo (optional), keyed by item_no */
+  defects?: Record<string, Defect>;
   pass_count: number;
   fail_count: number;
   na_count: number;
@@ -44,6 +46,12 @@ export interface VehicleInspection {
   photo_count: number;
   overall_result: 1 | 2 | null;
   photo_status: 0 | 1 | 2;
+  /** set when an admin approves the check (null = waiting for approval) */
+  approved_at?: string | null;
+  approved_by?: string | null;
+  /** who saved it and when (real backend only) */
+  created_by?: string | null;
+  updated_at?: string;
 }
 
 /** Row of v_ppe_inspection_summary */
@@ -73,7 +81,12 @@ export interface VehicleForm {
   note: string;
   results: Record<number, VehResult>;
   photos: Record<string, string>;
+  /** note + photo for items marked ไม่ผ่าน (2) */
+  defects: Record<number, Defect>;
 }
+
+/** A failed check item's note and (optional) photo — stored in vehicle_inspection_results.remark / photo_r2_key */
+export interface Defect { note: string; photo: string | null }
 
 /** Row of v_trip_activity_summary (1 vehicle / 1 day) */
 export interface TripActivity {
@@ -91,6 +104,10 @@ export interface TripActivity {
   area_names: string;
   area_count: number;
   note: string;
+  /** work clock (UTC ISO timestamps set by the server); minutes once ended */
+  work_started_at?: string | null;
+  work_ended_at?: string | null;
+  work_minutes?: number | null;
 }
 
 export interface TripForm {

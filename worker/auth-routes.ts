@@ -1,6 +1,6 @@
 /** Login, logout, first-time setup, password change, and user administration. */
 import {
-  CONSENT_VERSION, IP_WINDOW_MINUTES, LOCK_MINUTES, MAX_FAILED, authenticate, clearCookie, createSession, isRole,
+  CONSENT_VERSION, IDLE_MINUTES, IP_WINDOW_MINUTES, LOCK_MINUTES, MAX_FAILED, authenticate, clearCookie, createSession, isRole,
   readCookie, requireRole, sessionCookie, throttleLogin, type Actor, type Role,
 } from './auth';
 import { HttpError, bad, conflict, json, notFound, readJson } from './http';
@@ -117,7 +117,8 @@ export async function login(req: Request, env: Env) {
   ).bind(id, CONSENT_VERSION).first<{ consented: number; has_license: number }>();
   await env.DB.batch([
     env.DB.prepare(`UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = ${NOW_SQL} WHERE id = ?1`).bind(id),
-    env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?1 AND expires_at <= ?2`).bind(id, new Date(now).toISOString()),
+    env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?1 AND (expires_at <= ?2 OR last_seen_at < ?3)`)
+      .bind(id, new Date(now).toISOString(), new Date(now - IDLE_MINUTES * 60_000).toISOString()),
     s.stmt,
     audit(env, id, 'login', 'users', id),
   ]);
@@ -281,9 +282,11 @@ export async function resetPassword({ env, actor, req, params }: Ctx) {
 /** Cron housekeeping for auth tables. */
 export async function cleanupAuth(env: Env) {
   const now = new Date().toISOString();
+  const idleSince = new Date(Date.now() - IDLE_MINUTES * 60_000).toISOString();
   const old = new Date(Date.now() - IP_WINDOW_MINUTES * 60_000 * 4).toISOString();
   await env.DB.batch([
-    env.DB.prepare(`DELETE FROM sessions WHERE expires_at <= ?1`).bind(now),
+    // expired, or idle past the limit (authenticate() already refuses these; this removes the rows)
+    env.DB.prepare(`DELETE FROM sessions WHERE expires_at <= ?1 OR last_seen_at < ?2`).bind(now, idleSince),
     env.DB.prepare(`DELETE FROM login_throttle WHERE window_start < ?1`).bind(old),
   ]);
 }

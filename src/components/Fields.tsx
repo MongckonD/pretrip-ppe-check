@@ -132,6 +132,31 @@ export function EmployeeSelect(props: {
   );
 }
 
+/** Current time, refreshed every 15 s (for date/time shown on the forms; the server stamps the real one). */
+export function useNow() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 15_000);
+    return () => window.clearInterval(t);
+  }, []);
+  return now;
+}
+
+export const thaiDay = (d: Date) => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+export const thaiClock = (d: Date) => `${d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`;
+/** "2026-11-18" (+ "08:05") → Date in local time */
+export const fromIso = (date: string, time = '00:00') => new Date(`${date}T${time.slice(0, 5)}:00`);
+
+/** Value the user can see but not change (e.g. the date/time the system records). */
+export function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="ro">
+      <span className="ro-label">{label}</span>
+      <div className="ro-value" aria-label={`${label} (ระบบกำหนด)`}>{value}</div>
+    </div>
+  );
+}
+
 export function PlateInput(props: { value: string; onChange: (v: string) => void; id?: string }) {
   const { vehicles } = useMaster();
   const listId = `${props.id ?? 'plate'}-list`;

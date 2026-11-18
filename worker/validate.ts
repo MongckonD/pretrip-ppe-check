@@ -6,6 +6,11 @@ export function todayTH(now = Date.now()): string {
   return new Date(now + 7 * 3600_000).toISOString().slice(0, 10);
 }
 
+/** Current time in Thailand as HH:MM. */
+export function nowTimeTH(now = Date.now()): string {
+  return new Date(now + 7 * 3600_000).toISOString().slice(11, 16);
+}
+
 export function isDate(s: unknown): s is string {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const d = new Date(s + 'T00:00:00Z');

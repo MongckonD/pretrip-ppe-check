@@ -20,9 +20,9 @@ import { TimeActivitiesPage } from './pages/TimeActivitiesPage';
 import { VehiclePage } from './pages/VehiclePage';
 
 const WORK_TABS: TabDef[] = [
-  { key: 'veh', path: '/vehicle', label: 'ตรวจรถ', title: 'ตรวจรถก่อนออกงาน', icon: TruckIcon, render: () => <VehiclePage /> },
-  { key: 'ppe', path: '/ppe', label: 'PPE', title: 'ตรวจ PPE พนักงาน', icon: VestIcon, render: () => <PpePage /> },
-  { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: () => <TimeActivitiesPage /> },
+  { key: 'veh', path: '/vehicle', label: 'ตรวจรถ', title: 'ตรวจรถก่อนออกงาน', icon: TruckIcon, render: (c) => <VehiclePage goPpe={() => c.go('ppe')} /> },
+  { key: 'ppe', path: '/ppe', label: 'PPE', title: 'ตรวจ PPE พนักงาน', icon: VestIcon, render: (c) => <PpePage goVehicle={() => c.go('veh')} /> },
+  { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: (c) => <TimeActivitiesPage goVehicle={() => c.go('veh')} /> },
 ];
 
 /** "ข้ามไปหน้าหลัก" is remembered until the browser tab is closed (asked again on the next visit). */

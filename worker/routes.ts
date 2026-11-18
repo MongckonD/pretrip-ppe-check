@@ -2,8 +2,8 @@
 import { type Actor, requireRole, requireStaff } from './auth';
 import { HttpError, bad, conflict, json, notFound, readJson } from './http';
 import {
-  PHOTO_KEY_RE, bool, employeeId, inspectDate, isDate, isMonth, monthBounds, obj, optEmployeeId,
-  optMileage, optPlate, optTime, photoKey, plate, reqDate, str, text, todayTH,
+  PHOTO_KEY_RE, bool, employeeId, isDate, isMonth, monthBounds, obj, optEmployeeId,
+  optMileage, nowTimeTH, photoKey, plate, reqDate, str, text, todayTH,
 } from './validate';
 
 export interface Env {
@@ -209,6 +209,12 @@ export async function deleteVehicle({ env, actor, params }: Ctx) {
 
 type Row = Record<string, unknown>;
 
+/** Every R2 key one inspection uses (?1 = inspection id): the 6 vehicle photos + failed items' photos. */
+const INSPECTION_PHOTO_KEYS_SQL = `
+  SELECT r2_key AS k FROM vehicle_inspection_photos WHERE inspection_id = ?1
+  UNION
+  SELECT photo_r2_key AS k FROM vehicle_inspection_results WHERE inspection_id = ?1 AND photo_r2_key IS NOT NULL`;
+
 function vehOut(r: Row) {
   return {
     id: r.id, inspect_date: r.inspect_date, inspect_time: r.inspect_time,
@@ -233,15 +239,25 @@ export async function listVehicleInspections({ env, url }: Ctx) {
     `SELECT * FROM v_vehicle_inspection_summary WHERE ${f.sql}
      ORDER BY inspect_date, inspect_time IS NULL, inspect_time, plate`,
   ).bind(...f.args).all<Row>();
-  return json(results.map(vehOut));
+  // failed items' note + photo: { "<item_no>": { note, photo } } per inspection
+  const defects: Record<string, Record<string, { note: string; photo: string | null }>> = {};
+  if (results.length) {
+    const { results: rows } = await env.DB.prepare(
+      `SELECT inspection_id, item_no, remark, photo_r2_key FROM vehicle_inspection_results
+       WHERE result = 2 AND inspection_id IN (SELECT value FROM json_each(?1))`,
+    ).bind(JSON.stringify(results.map((r) => r.id))).all<{ inspection_id: string; item_no: number; remark: string; photo_r2_key: string | null }>();
+    for (const d of rows) (defects[d.inspection_id] ??= {})[String(d.item_no)] = { note: d.remark, photo: d.photo_r2_key };
+  }
+  return json(results.map((r) => ({ ...vehOut(r), defects: defects[r.id as string] ?? {} })));
 }
 
 export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
   requireStaff(actor);
   const b = await readJson(req);
   const reqId = b.id === undefined || b.id === null || b.id === '' ? null : str(b.id, 'รหัสบันทึก', 64);
-  const date = inspectDate(b.date);
-  const time = optTime(b.time);
+  // date and time of a vehicle check are set by the server (Thai time), not by the form — staff cannot change them
+  let date = todayTH();
+  let time: string | null = nowTimeTH();
   const dman = employeeId(b.dman, 'D-Man');
   let h1 = optEmployeeId(b.h1, 'Helper 1');
   let h2 = optEmployeeId(b.h2, 'Helper 2');
@@ -263,7 +279,19 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
 
   const photosIn = obj(b.photos, 'รูปภาพ');
   const photoKeys = Object.entries(photosIn).map(([slot, key]) => [str(slot, 'ช่องรูป', 20), photoKey(key)] as const);
-  if (new Set(photoKeys.map(([, k]) => k)).size !== photoKeys.length) throw bad('ใช้รูปเดียวกันซ้ำหลายช่อง');
+
+  // failed items (2): note required, photo optional — { "<item_no>": { note, photo } }
+  const defectsIn = b.defects === undefined || b.defects === null ? {} : obj(b.defects, 'ข้อบกพร่อง');
+  const resultRows = Object.entries(results).map(([k, r]) => {
+    if (r !== 2) return { n: Number(k), r, m: '', p: null as string | null };
+    const d = defectsIn[k] === undefined ? {} : obj(defectsIn[k], `ข้อบกพร่องข้อ ${k}`);
+    const m = text(d.note, `หมายเหตุข้อ ${k}`, 500).trim();
+    if (!m) throw bad(`ระบุหมายเหตุของข้อ ${k} ที่ไม่ผ่าน`);
+    const p = d.photo === undefined || d.photo === null || d.photo === '' ? null : photoKey(d.photo);
+    return { n: Number(k), r, m, p };
+  });
+  const allKeys = [...photoKeys.map(([, k]) => k), ...resultRows.flatMap((r) => (r.p ? [r.p] : []))];
+  if (new Set(allKeys).size !== allKeys.length) throw bad('ใช้รูปเดียวกันซ้ำหลายช่อง');
 
   // reference checks with clear messages (the DB enforces them again)
   const vehicle = await findVehicleByPlate(env, p);
@@ -284,9 +312,12 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
   let id: string;
   let isNew = false;
   if (reqId) {
-    const cur = await env.DB.prepare(`SELECT id, approved_at FROM vehicle_inspections WHERE id = ?1`)
-      .bind(reqId).first<{ id: string; approved_at: string | null }>();
+    const cur = await env.DB.prepare(`SELECT id, approved_at, inspect_date, inspect_time FROM vehicle_inspections WHERE id = ?1`)
+      .bind(reqId).first<{ id: string; approved_at: string | null; inspect_date: string; inspect_time: string | null }>();
     if (!cur) throw notFound('ไม่พบบันทึกนี้ (อาจถูกลบไปแล้ว)');
+    // editing keeps the original date and time
+    date = cur.inspect_date;
+    time = cur.inspect_time;
     if (cur.approved_at) throw conflict('รายการนี้หัวหน้าอนุมัติแล้ว แก้ไขไม่ได้ (ต้องยกเลิกอนุมัติก่อน)');
     const clash = await env.DB.prepare(
       `SELECT id FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2 AND id <> ?3`,
@@ -302,18 +333,21 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
     isNew = !cur;
     id = cur?.id ?? crypto.randomUUID();
   }
-  const { results: old } = await env.DB.prepare(
-    `SELECT r2_key FROM vehicle_inspection_photos WHERE inspection_id = ?1`,
-  ).bind(id).all<{ r2_key: string }>();
-  const oldKeys = old.map((r) => r.r2_key);
+  const { results: old } = await env.DB.prepare(INSPECTION_PHOTO_KEYS_SQL).bind(id).all<{ k: string }>();
+  const oldKeys = old.map((r) => r.k);
 
   // every referenced photo must really be in R2
   const photoMeta: Record<string, { k: string; t: string; s: number }> = {};
-  await Promise.all(photoKeys.map(async ([slot, key]) => {
-    const head = await env.PHOTOS.head(key);
-    if (!head) throw bad(`ไม่พบไฟล์รูปช่อง ${slot} กรุณาอัปโหลดใหม่`);
-    photoMeta[slot] = { k: key, t: head.httpMetadata?.contentType ?? 'image/jpeg', s: head.size };
-  }));
+  await Promise.all([
+    ...photoKeys.map(async ([slot, key]) => {
+      const head = await env.PHOTOS.head(key);
+      if (!head) throw bad(`ไม่พบไฟล์รูปช่อง ${slot} กรุณาอัปโหลดใหม่`);
+      photoMeta[slot] = { k: key, t: head.httpMetadata?.contentType ?? 'image/jpeg', s: head.size };
+    }),
+    ...resultRows.filter((r) => r.p).map(async (r) => {
+      if (!(await env.PHOTOS.head(r.p as string))) throw bad(`ไม่พบไฟล์รูปข้อ ${r.n} กรุณาถ่ายใหม่`);
+    }),
+  ]);
 
   await env.DB.batch([
     // trips and PPE sheets linked to this inspection must follow its date/vehicle, so unlink any that no longer match
@@ -337,9 +371,11 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
     ).bind(id, date, time, vehicle.id, mileage, dman, h1, h2, note, actor.id),
     env.DB.prepare(`DELETE FROM vehicle_inspection_results WHERE inspection_id = ?1`).bind(id),
     env.DB.prepare(
-      `INSERT INTO vehicle_inspection_results (inspection_id, item_no, result)
-       SELECT ?1, CAST(key AS INTEGER), value FROM json_each(?2)`,
-    ).bind(id, JSON.stringify(results)),
+      `INSERT INTO vehicle_inspection_results (inspection_id, item_no, result, remark, photo_r2_key)
+       SELECT ?1, json_extract(value, '$.n'), json_extract(value, '$.r'),
+              coalesce(json_extract(value, '$.m'), ''), json_extract(value, '$.p')
+       FROM json_each(?2)`,
+    ).bind(id, JSON.stringify(resultRows)),
     env.DB.prepare(`DELETE FROM vehicle_inspection_photos WHERE inspection_id = ?1`).bind(id),
     env.DB.prepare(
       `INSERT INTO vehicle_inspection_photos (inspection_id, slot, r2_key, content_type, size_bytes, uploaded_by)
@@ -351,18 +387,32 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
       `UPDATE trip_activities SET vehicle_inspection_id = ?1
        WHERE activity_date = ?2 AND vehicle_id = ?3 AND vehicle_inspection_id IS NULL`,
     ).bind(id, date, vehicle.id),
-    // PPE sheets of the same day and vehicle saved earlier get linked now
+    // PPE sheets of the same day and vehicle saved earlier get linked now (crew members only)
     env.DB.prepare(
       `UPDATE ppe_inspections SET vehicle_inspection_id = ?1
-       WHERE inspect_date = ?2 AND vehicle_id = ?3 AND vehicle_inspection_id IS NULL`,
-    ).bind(id, date, vehicle.id),
+       WHERE inspect_date = ?2 AND vehicle_id = ?3 AND vehicle_inspection_id IS NULL
+         AND employee_id IN (SELECT value FROM json_each(?4))`,
+    ).bind(id, date, vehicle.id, JSON.stringify(crew)),
+    // the crew may have changed on re-save: PPE of people no longer on this vehicle is unlinked (kept, not counted
+    // for this vehicle), and the remaining PPE + the day's trip take the current D-Man
+    env.DB.prepare(
+      `UPDATE ppe_inspections SET vehicle_inspection_id = NULL
+       WHERE vehicle_inspection_id = ?1 AND employee_id NOT IN (SELECT value FROM json_each(?2))`,
+    ).bind(id, JSON.stringify(crew)),
+    env.DB.prepare(
+      `UPDATE ppe_inspections SET inspector_id = ?2 WHERE vehicle_inspection_id = ?1 AND inspector_id <> ?2`,
+    ).bind(id, dman),
+    env.DB.prepare(
+      `UPDATE trip_activities SET dman_id = ?2 WHERE vehicle_inspection_id = ?1 AND dman_id <> ?2`,
+    ).bind(id, dman),
     audit(env, actor, isNew ? 'create' : 'update', 'vehicle_inspections', id, {
       date, time, plate: vehicle.plate, dman, h1, h2, mileage, note, results, photos: Object.fromEntries(photoKeys),
+      defects: Object.fromEntries(resultRows.filter((r) => r.r === 2).map((r) => [r.n, { note: r.m, photo: r.p }])),
     }),
   ]);
 
   // photos that this record no longer uses
-  const keep = new Set(photoKeys.map(([, k]) => k));
+  const keep = new Set([...photoKeys.map(([, k]) => k), ...resultRows.flatMap((r) => (r.p ? [r.p] : []))]);
   const dropped = oldKeys.filter((k) => !keep.has(k));
   if (dropped.length) exec.waitUntil(env.PHOTOS.delete(dropped));
   return json({ id });
@@ -376,13 +426,12 @@ export async function deleteVehicleInspection({ env, actor, params, exec }: Ctx)
   ).bind(id).first<{ id: string; inspect_date: string; approved_at: string | null; plate: string }>();
   if (!cur) throw notFound('ไม่พบบันทึกนี้ (อาจถูกลบไปแล้ว)');
   if (cur.approved_at) throw conflict('รายการนี้หัวหน้าอนุมัติแล้ว ลบไม่ได้ (ต้องยกเลิกอนุมัติก่อน)');
-  const { results } = await env.DB.prepare(`SELECT r2_key FROM vehicle_inspection_photos WHERE inspection_id = ?1`)
-    .bind(id).all<{ r2_key: string }>();
+  const { results } = await env.DB.prepare(INSPECTION_PHOTO_KEYS_SQL).bind(id).all<{ k: string }>();
   await env.DB.batch([
     audit(env, actor, 'delete', 'vehicle_inspections', id, { date: cur.inspect_date, plate: cur.plate }),
     env.DB.prepare(`DELETE FROM vehicle_inspections WHERE id = ?1`).bind(id),
   ]);
-  const keys = results.map((r) => r.r2_key);
+  const keys = results.map((r) => r.k);
   if (keys.length) exec.waitUntil(env.PHOTOS.delete(keys));
   return json({ ok: true });
 }
@@ -414,9 +463,9 @@ export async function listPpeInspections({ env, url }: Ctx) {
 export async function savePpeInspections({ env, actor, req }: Ctx) {
   requireStaff(actor);
   const b = await readJson(req);
-  const date = inspectDate(b.date);
-  const inspector = employeeId(b.inspector, 'ผู้ตรวจ');
-  const p = optPlate(b.plate);
+  // PPE date is set by the server (today, Thai time) — staff cannot change it
+  const date = todayTH();
+  const p = plate(b.plate);
   const rowsIn = obj(b.rows, 'ผล PPE');
 
   const rows: Record<string, Record<string, number>> = {};
@@ -435,6 +484,17 @@ export async function savePpeInspections({ env, actor, req }: Ctx) {
   if (!emps.length) throw bad('ยังไม่ได้ตรวจ PPE ของใคร');
   if (emps.length > 200) throw bad('บันทึกได้ครั้งละไม่เกิน 200 คน');
 
+  // PPE follows today's vehicle check of this vehicle: only its crew, inspected by its D-Man
+  const vehicle = await findVehicleByPlate(env, p);
+  if (!vehicle) throw bad(`ยังไม่ได้ลงทะเบียนรถ ${p} — เพิ่มได้ที่แท็บตั้งค่า`);
+  const vi = await env.DB.prepare(
+    `SELECT dman_id, helper1_id, helper2_id FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2`,
+  ).bind(date, vehicle.id).first<{ dman_id: string; helper1_id: string | null; helper2_id: string | null }>();
+  if (!vi) throw bad(`ยังไม่ได้ตรวจรถทะเบียน ${vehicle.plate} วันนี้ — ตรวจรถก่อนแล้วค่อยตรวจ PPE`);
+  const crew = new Set([vi.dman_id, vi.helper1_id, vi.helper2_id].filter((x): x is string => !!x));
+  const outsider = emps.find((e) => !crew.has(e));
+  if (outsider) throw bad(`${outsider} ไม่ได้อยู่ในทีมงานของรถ ${vehicle.plate} วันนี้ (ตรวจ PPE ได้เฉพาะทีมที่เลือกตอนตรวจรถ)`);
+  const inspector = vi.dman_id;
   await assertEmployeesExist(env, [inspector, ...emps]);
   const { results: codes } = await env.DB.prepare(`SELECT code FROM ppe_items`).all<{ code: string }>();
   const codeSet = new Set(codes.map((c) => c.code));
@@ -442,12 +502,7 @@ export async function savePpeInspections({ env, actor, req }: Ctx) {
     const unknown = Object.keys(items).find((c) => !codeSet.has(c));
     if (unknown) throw bad(`ไม่มีอุปกรณ์รหัส ${unknown}`);
   }
-  let vehicleId: string | null = null;
-  if (p) {
-    const v = await findVehicleByPlate(env, p);
-    if (!v) throw bad(`ยังไม่ได้ลงทะเบียนรถ ${p} — เพิ่มได้ที่แท็บตั้งค่า หรือเว้นว่างไว้`);
-    vehicleId = v.id;
-  }
+  const vehicleId = vehicle.id;
   const { results: locked } = await env.DB.prepare(
     `SELECT employee_id FROM ppe_inspections
      WHERE inspect_date = ?1 AND approved_at IS NOT NULL AND employee_id IN (SELECT value FROM json_each(?2))`,
@@ -571,6 +626,12 @@ export async function getPhoto({ env, params, req }: Ctx) {
   return new Response(obj.body, { headers });
 }
 
+/** Which of the keys in ?1 (JSON array) a saved inspection uses: the 6 vehicle photos or a failed item's photo. */
+const USED_PHOTO_KEYS_SQL = `
+  SELECT r2_key AS k FROM vehicle_inspection_photos WHERE r2_key IN (SELECT value FROM json_each(?1))
+  UNION
+  SELECT photo_r2_key AS k FROM vehicle_inspection_results WHERE photo_r2_key IN (SELECT value FROM json_each(?1))`;
+
 /** Delete photos that are not used by any saved inspection (e.g. replaced before saving). */
 export async function deletePhotos({ env, actor, req }: Ctx) {
   requireStaff(actor);
@@ -578,10 +639,8 @@ export async function deletePhotos({ env, actor, req }: Ctx) {
   if (!Array.isArray(b.keys) || b.keys.length > 50) throw bad('keys ต้องเป็นรายการไม่เกิน 50 รายการ');
   const keys = [...new Set(b.keys.map(photoKey))];
   if (!keys.length) return json({ deleted: [], kept: [] });
-  const { results } = await env.DB.prepare(
-    `SELECT r2_key FROM vehicle_inspection_photos WHERE r2_key IN (SELECT value FROM json_each(?1))`,
-  ).bind(JSON.stringify(keys)).all<{ r2_key: string }>();
-  const used = new Set(results.map((r) => r.r2_key));
+  const { results } = await env.DB.prepare(USED_PHOTO_KEYS_SQL).bind(JSON.stringify(keys)).all<{ k: string }>();
+  const used = new Set(results.map((r) => r.k));
   const del = keys.filter((k) => !used.has(k));
   if (del.length) await env.PHOTOS.delete(del);
   return json({ deleted: del, kept: [...used] });
@@ -596,10 +655,8 @@ export async function cleanupOrphanPhotos(env: Env): Promise<number> {
     const page = await env.PHOTOS.list({ cursor, limit: 500 });
     const old = page.objects.filter((o) => o.uploaded.getTime() < cutoff && PHOTO_KEY_RE.test(o.key)).map((o) => o.key);
     if (old.length) {
-      const { results } = await env.DB.prepare(
-        `SELECT r2_key FROM vehicle_inspection_photos WHERE r2_key IN (SELECT value FROM json_each(?1))`,
-      ).bind(JSON.stringify(old)).all<{ r2_key: string }>();
-      const used = new Set(results.map((r) => r.r2_key));
+      const { results } = await env.DB.prepare(USED_PHOTO_KEYS_SQL).bind(JSON.stringify(old)).all<{ k: string }>();
+      const used = new Set(results.map((r) => r.k));
       const orphans = old.filter((k) => !used.has(k));
       for (let i = 0; i < orphans.length; i += 1000) await env.PHOTOS.delete(orphans.slice(i, i + 1000));
       removed += orphans.length;

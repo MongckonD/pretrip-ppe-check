@@ -3,6 +3,7 @@
  * which vehicles failed, and which areas the trucks are going to.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSignedUrls } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { listPpeInspections, listTripActivities, listVehicleInspections } from '../lib/api';
 import type { PpeInspection, TripActivity, VehicleInspection } from '../lib/types';
@@ -11,7 +12,7 @@ import { errMsg, today } from '../lib/utils';
 interface Day { veh: VehicleInspection[]; ppe: PpeInspection[]; trips: TripActivity[] }
 
 export function AdminHomePage({ go }: { go: (tab: string) => void }) {
-  const { vehicles, activeEmployees, checkItems, areaTypes, nameOf } = useMaster();
+  const { vehicles, checkItems, areaTypes, nameOf } = useMaster();
   const [date, setDate] = useState(today());
   const [day, setDay] = useState<Day | null>(null);
   const [error, setError] = useState('');
@@ -35,24 +36,33 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
     const itemName = new Map(checkItems.map((i) => [i.item_no, i.name]));
     const failed = day.veh.filter((r) => r.fail_count > 0).map((r) => ({
       plate: r.plate, dman: r.dman_id,
-      items: Object.entries(r.results ?? {}).filter(([, v]) => v === 2).map(([k]) => itemName.get(Number(k)) ?? `ข้อ ${k}`),
+      items: Object.entries(r.results ?? {}).filter(([, v]) => v === 2).map(([k]) => ({
+        no: k, name: itemName.get(Number(k)) ?? `ข้อ ${k}`,
+        note: r.defects?.[k]?.note ?? '', photo: r.defects?.[k]?.photo ?? null,
+      })),
     }));
+    const crew = new Set(day.veh.flatMap((r) => [r.dman_id, r.helper1_id, r.helper2_id].filter((x): x is string => !!x)));
     const areaCount = new Map<string, number>();
     day.trips.forEach((t) => t.area_codes.forEach((c) => areaCount.set(c, (areaCount.get(c) ?? 0) + 1)));
     return {
       vehTotal: active.length,
       vehDone: active.filter((v) => inspected.has(v.plate)).length,
       vehFailed: failed.length,
-      ppeTotal: activeEmployees.length,
-      ppeDone: day.ppe.length,
-      ppeOk: day.ppe.filter((p) => p.status === 'ครบ').length,
-      tripsDone: active.filter((v) => tripPlates.has(v.plate)).length,
+      // PPE is checked for the crews of today's vehicle checks only (not every employee)
+      ppeTotal: crew.size,
+      ppeDone: day.ppe.filter((p) => crew.has(p.employee_id)).length,
+      ppeOk: day.ppe.filter((p) => crew.has(p.employee_id) && p.status === 'ครบ').length,
+      // a pre-departure record needs that vehicle's check, so it is counted out of the vehicles checked today
+      tripsTotal: inspected.size,
+      tripsDone: [...inspected].filter((p) => tripPlates.has(p)).length,
       notInspected: active.filter((v) => !inspected.has(v.plate)).map((v) => v.plate),
-      noTrip: active.filter((v) => !tripPlates.has(v.plate)).map((v) => v.plate),
+      noTrip: [...inspected].filter((p) => !tripPlates.has(p)),
       failed,
       areas: areaTypes.filter((a) => areaCount.has(a.code)).map((a) => ({ name: a.name, n: areaCount.get(a.code)! })),
     };
-  }, [day, vehicles, activeEmployees, checkItems, areaTypes]);
+  }, [day, vehicles, checkItems, areaTypes]);
+  // photos of failed items (shown next to their notes)
+  const urls = useSignedUrls(s?.failed.flatMap((f) => f.items.flatMap((i) => (i.photo ? [i.photo] : []))) ?? []);
 
   return (
     <>
@@ -69,8 +79,8 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
           <div className="kpis">
             <div className={`kpi ${s.vehDone === s.vehTotal && s.vehTotal ? 'good' : ''}`}><b>{s.vehDone}/{s.vehTotal}</b><span>รถตรวจแล้ว</span></div>
             <div className={`kpi ${s.vehFailed ? 'bad' : 'good'}`}><b>{s.vehFailed}</b><span>รถไม่ผ่าน</span></div>
-            <div className="kpi"><b>{s.ppeDone}/{s.ppeTotal}</b><span>ตรวจ PPE แล้ว (ครบ {s.ppeOk})</span></div>
-            <div className={`kpi ${s.tripsDone === s.vehTotal && s.vehTotal ? 'good' : ''}`}><b>{s.tripsDone}/{s.vehTotal}</b><span>บันทึกก่อนออกงาน</span></div>
+            <div className="kpi"><b>{s.ppeDone}/{s.ppeTotal}</b><span>ตรวจ PPE แล้ว · ทีมบนรถวันนี้ (ครบ {s.ppeOk})</span></div>
+            <div className={`kpi ${s.tripsDone === s.tripsTotal && s.tripsTotal ? 'good' : ''}`}><b>{s.tripsDone}/{s.tripsTotal}</b><span>บันทึกก่อนออกงาน · รถที่ตรวจแล้ว</span></div>
           </div>
         )}
       </section>
@@ -83,7 +93,21 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
               <div className="emp" key={f.plate}>
                 <div className="row spread"><b>{f.plate}</b><span className="pill f">{f.items.length} ข้อไม่ผ่าน</span></div>
                 <div className="note">D-Man {nameOf(f.dman)}</div>
-                <div className="tags">{f.items.map((i) => <span key={i} className="tag on">{i}</span>)}</div>
+                <ul className="defect-list">
+                  {f.items.map((i) => (
+                    <li key={i.no}>
+                      <div className="defect-text">
+                        <b>{i.name}</b>
+                        {i.note ? <span>{i.note}</span> : <span className="note">ไม่มีหมายเหตุ</span>}
+                      </div>
+                      {i.photo && urls[i.photo] && (
+                        <a href={urls[i.photo]} target="_blank" rel="noopener noreferrer" title="เปิดรูปเต็ม">
+                          <img src={urls[i.photo]} alt={`รูป${i.name}`} />
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )) : <div className="empty">ไม่มีรถที่ไม่ผ่าน</div>}
           </section>
@@ -94,7 +118,7 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
             {s.notInspected.length
               ? <div className="tags">{s.notInspected.map((p) => <span key={p} className="tag">{p}</span>)}</div>
               : <div className="note">ตรวจครบทุกคันแล้ว</div>}
-            <div className="mini-head mt">ยังไม่บันทึกก่อนออกงาน <span className="note">({s.noTrip.length})</span></div>
+            <div className="mini-head mt">ตรวจรถแล้วแต่ยังไม่บันทึกก่อนออกงาน <span className="note">({s.noTrip.length})</span></div>
             {s.noTrip.length
               ? <div className="tags">{s.noTrip.map((p) => <span key={p} className="tag">{p}</span>)}</div>
               : <div className="note">บันทึกครบทุกคันแล้ว</div>}

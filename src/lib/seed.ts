@@ -54,5 +54,4 @@ export const PHOTO_SLOTS: PhotoSlot[] = [
   { code: 'back', name: 'หลัง', sort_order: 3 },
   { code: 'dash', name: 'หน้าปัด', sort_order: 4 },
   { code: 'cargo', name: 'สินค้า', sort_order: 5 },
-  { code: 'ppe', name: 'PPE', sort_order: 6 },
 ];

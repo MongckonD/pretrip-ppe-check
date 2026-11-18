@@ -1,6 +1,6 @@
 # Pre-Trip PPE Check · Piyachart 54
 
-ระบบตรวจรถก่อนออกงาน (23 ข้อ) + ตรวจ PPE พนักงาน (4 รายการ) + รูปถ่าย 6 มุม
+ระบบตรวจรถก่อนออกงาน (23 ข้อ) + ตรวจ PPE พนักงาน (4 รายการ) + รูปถ่ายรถ 5 มุม
 
 - **Frontend:** React 18 + Vite + TypeScript
 - **Backend:** Cloudflare — D1 (ฐานข้อมูล) + R2 (รูปถ่าย) + Worker API (login ด้วย id_user + รหัสผ่าน)

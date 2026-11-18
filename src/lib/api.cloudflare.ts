@@ -114,10 +114,19 @@ export async function deleteVehicle(id: string) {
 export const listVehicleInspections = (opts: { date?: string; month?: string }) =>
   call<VehicleInspection[]>('GET', `/api/vehicle-inspections?${q(opts)}`);
 
+/** note + photo only for items that are ไม่ผ่าน */
+export function failedDefects(f: VehicleForm) {
+  return Object.fromEntries(Object.entries(f.results).filter(([, v]) => v === 2).map(([k]) => {
+    const d = f.defects[Number(k)];
+    return [k, { note: (d?.note ?? '').trim(), photo: d?.photo ?? null }];
+  }));
+}
+
 export async function saveVehicleInspection(f: VehicleForm) {
   const r = await call<{ id: string }>('POST', '/api/vehicle-inspections', {
     id: f.id, date: f.date, time: f.time, dman: f.dman, h1: f.h1, h2: f.h2,
     plate: f.plate.trim(), mileage: f.mileage.trim(), note: f.note, results: f.results, photos: f.photos,
+    defects: failedDefects(f),
   });
   return r.id;
 }
@@ -192,6 +201,12 @@ export async function saveTripActivity(f: TripForm) {
 export async function deleteTripActivity(id: string) {
   await call('DELETE', `/api/trip-activities/${encodeURIComponent(id)}`);
 }
+/** "เริ่มการทำงาน": the server stamps the start time on today's trip of this vehicle */
+export const startWork = (plate: string, time: string) =>
+  call<{ id: string; work_started_at: string }>('POST', '/api/trip-activities/start', { plate: plate.trim(), time });
+/** "จบงาน / หยุดเวลาทำงาน" */
+export const endWork = (id: string) =>
+  call<{ id: string; work_ended_at: string }>('POST', `/api/trip-activities/${encodeURIComponent(id)}/end`, {});
 
 /** Only meaningful in test mode. */
 export async function resetDemo(_empty = false) {
