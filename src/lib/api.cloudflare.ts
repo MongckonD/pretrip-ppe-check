@@ -5,7 +5,7 @@
  */
 import type { LicenseForm, LicenseInfo, LicenseRow } from './license';
 import type {
-  Employee, Master, PpeForm, PpeInspection, TripActivity, Vehicle, VehicleForm, VehicleInspection,
+  Employee, ListOpts, Master, PpeForm, PpeInspection, TripActivity, Vehicle, VehicleForm, VehicleInspection,
 } from './types';
 
 /** admin = ทุกอย่าง · user = พนักงาน */
@@ -65,10 +65,12 @@ async function call<T>(method: string, path: string, body?: unknown, raw?: Blob 
   return data as T;
 }
 
-const q = (opts: { date?: string; month?: string }) => {
+const q = (opts: ListOpts) => {
   const p = new URLSearchParams();
   if (opts.date) p.set('date', opts.date);
   if (opts.month) p.set('month', opts.month);
+  if (opts.from) p.set('from', opts.from);
+  if (opts.to) p.set('to', opts.to);
   return p.toString();
 };
 
@@ -114,7 +116,7 @@ export async function deleteVehicle(id: string) {
 }
 
 /* ---------- vehicle inspections ---------- */
-export const listVehicleInspections = (opts: { date?: string; month?: string }) =>
+export const listVehicleInspections = (opts: ListOpts) =>
   call<VehicleInspection[]>('GET', `/api/vehicle-inspections?${q(opts)}`);
 
 /** admin: approve a vehicle check (final — the server refuses approve=false once approved) */
@@ -187,7 +189,7 @@ export async function signedUrls(paths: string[]) {
 }
 
 /* ---------- PPE ---------- */
-export const listPpeInspections = (opts: { date?: string; month?: string }) =>
+export const listPpeInspections = (opts: ListOpts) =>
   call<PpeInspection[]>('GET', `/api/ppe-inspections?${q(opts)}`);
 
 export async function savePpeInspections(f: PpeForm) {
@@ -203,7 +205,7 @@ export async function deletePpeInspection(id: string) {
 }
 
 /* ---------- Time activities ---------- */
-export const listTripActivities = (opts: { date?: string; month?: string }) =>
+export const listTripActivities = (opts: ListOpts) =>
   call<TripActivity[]>('GET', `/api/trip-activities?${q(opts)}`);
 
 

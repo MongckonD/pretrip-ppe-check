@@ -5,6 +5,7 @@
  */
 import { failedDefects } from './api.cloudflare';
 import type {
+  ListOpts,
   Defect, Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity,
 } from './types';
 import { licenseStatus, type DriverLicense, type LicenseForm, type LicenseInfo, type LicenseRow } from './license';
@@ -145,8 +146,10 @@ function ppeSummary(r: PpeRow): PpeInspection {
     status: vals.length < required ? 'ไม่ครบ' : missing ? 'อุปกรณ์ไม่ครบ' : 'ครบ',
   };
 }
-function inRange(date: string, opts: { date?: string; month?: string }) {
+function inRange(date: string, opts: ListOpts) {
   if (opts.date && date !== opts.date) return false;
+  if (opts.from && date < opts.from) return false;
+  if (opts.to && date > opts.to) return false;
   if (opts.month) {
     const { from, to } = monthRange(opts.month);
     if (date < from || date > to) return false;
@@ -187,7 +190,7 @@ export async function deleteVehicle(id: string) {
 }
 
 /* ---------- vehicle inspections ---------- */
-export async function listVehicleInspections(opts: { date?: string; month?: string }) {
+export async function listVehicleInspections(opts: ListOpts) {
   await tick();
   return load().veh
     .filter((r) => inRange(r.inspect_date, opts))
@@ -308,7 +311,7 @@ export async function signedUrls(paths: string[]) {
 }
 
 /* ---------- PPE ---------- */
-export async function listPpeInspections(opts: { date?: string; month?: string }) {
+export async function listPpeInspections(opts: ListOpts) {
   await tick();
   return load().ppe
     .filter((r) => inRange(r.inspect_date, opts))
@@ -356,7 +359,7 @@ function tripSummary(t: TripRow, db: Db): TripActivity {
   };
 }
 
-export async function listTripActivities(opts: { date?: string; month?: string }) {
+export async function listTripActivities(opts: ListOpts) {
   await tick();
   const db = load();
   return db.trips

@@ -120,3 +120,6 @@ export interface PpeForm {
   inspector: string;
   rows: Record<string, Record<string, PpeResult>>;
 }
+
+/** which records to list: one day, one month, or a date range (from–to, inclusive) */
+export interface ListOpts { date?: string; month?: string; from?: string; to?: string }

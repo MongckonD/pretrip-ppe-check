@@ -123,6 +123,7 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
         <h2>ไปที่</h2>
         <div className="row">
           <button className="btn ghost" onClick={() => go('vs')}>สถานะรถ / อนุมัติการตรวจรถ</button>
+          <button className="btn ghost" onClick={() => go('ppe')}>ผลการตรวจ PPE</button>
           <button className="btn ghost" onClick={() => go('sum')}>สรุปผลการทำงาน</button>
           <button className="btn ghost" onClick={() => go('dash')}>ภาพรวมประจำเดือน</button>
           <button className="btn ghost" onClick={() => go('data')}>ข้อมูลการตรวจ / ดาวน์โหลด CSV</button>

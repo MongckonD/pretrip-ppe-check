@@ -68,7 +68,16 @@ export function dateFilter(url: URL): { sql: string; args: string[] } {
     const { from, to } = monthBounds(month);
     return { sql: 'inspect_date BETWEEN ?1 AND ?2', args: [from, to] };
   }
-  throw bad('ต้องระบุ date หรือ month');
+  // date range (inclusive), e.g. the admin report: ?from=2026-11-01&to=2026-11-19 — at most 366 days
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+  if (from || to) {
+    if (!from || !to || !isDate(from) || !isDate(to)) throw bad('พารามิเตอร์ from / to ไม่ถูกต้อง');
+    if (from > to) throw bad('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด');
+    if ((Date.parse(to) - Date.parse(from)) / 86_400_000 > 366) throw bad('เลือกช่วงวันที่ได้ไม่เกิน 1 ปี');
+    return { sql: 'inspect_date BETWEEN ?1 AND ?2', args: [from, to] };
+  }
+  throw bad('ต้องระบุ date, month หรือ from / to');
 }
 
 /* =====================================================================
@@ -233,34 +242,78 @@ function vehOut(r: Row) {
   };
 }
 
+/**
+ * Vehicle checks for a day / month / range, with the same fields as v_vehicle_inspection_summary.
+ * D1 rows read: the view re-scans each check's 23 results ~10 times (+ every check item / photo slot per row);
+ * here the results and photos are read ONCE and the counts are made in the Worker (≈ 25 rows per check, ~90% less).
+ */
 export async function listVehicleInspections({ env, url }: Ctx) {
   const f = dateFilter(url);
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM v_vehicle_inspection_summary WHERE ${f.sql}
-     ORDER BY inspect_date, inspect_time IS NULL, inspect_time, plate`,
+  const { results: rows } = await env.DB.prepare(
+    `SELECT vi.id, vi.inspect_date, vi.month, vi.inspect_time, vi.vehicle_id, v.plate, v.type AS vehicle_type, vi.mileage,
+            vi.dman_id, vi.helper1_id, vi.helper2_id, vi.declared_result, vi.line_photo_sent, vi.note, vi.source,
+            vi.approved_by, vi.approved_at, vi.created_by, vi.updated_by, vi.created_at, vi.updated_at,
+            vi.rejected_at, vi.rejected_by, vi.reject_reason
+     FROM vehicle_inspections vi
+     JOIN vehicles v  ON v.id = vi.vehicle_id
+     JOIN employees d ON d.id = vi.dman_id
+     WHERE ${f.sql.replace(/inspect_date/g, 'vi.inspect_date')}
+     ORDER BY vi.inspect_date, vi.inspect_time IS NULL, vi.inspect_time, v.plate`,
   ).bind(...f.args).all<Row>();
-  // failed items' note + photo: { "<item_no>": { note, photo } } per inspection
-  const defects: Record<string, Record<string, { note: string; photo: string | null }>> = {};
-  if (results.length) {
-    const { results: rows } = await env.DB.prepare(
-      `SELECT inspection_id, item_no, remark, photo_r2_key FROM vehicle_inspection_results
-       WHERE result = 2 AND inspection_id IN (SELECT value FROM json_each(?1))`,
-    ).bind(JSON.stringify(results.map((r) => r.id))).all<{ inspection_id: string; item_no: number; remark: string; photo_r2_key: string | null }>();
-    for (const d of rows) (defects[d.inspection_id] ??= {})[String(d.item_no)] = { note: d.remark, photo: d.photo_r2_key };
+  if (!rows.length) return json([]);
+
+  const ids = JSON.stringify(rows.map((r) => r.id));
+  const [res, pho, items, slots] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT inspection_id AS i, item_no AS n, result AS r, remark AS m, photo_r2_key AS p
+       FROM vehicle_inspection_results WHERE inspection_id IN (SELECT value FROM json_each(?1))`,
+    ).bind(ids),
+    env.DB.prepare(
+      `SELECT inspection_id AS i, slot AS s, r2_key AS k FROM vehicle_inspection_photos
+       WHERE inspection_id IN (SELECT value FROM json_each(?1))`,
+    ).bind(ids),
+    env.DB.prepare(`SELECT item_no FROM check_items WHERE active = 1`),
+    env.DB.prepare(`SELECT code FROM photo_slots WHERE active = 1`),
+  ]);
+  const activeItems = (items.results as { item_no: number }[]).map((x) => String(x.item_no));
+  const activeSlots = (slots.results as { code: string }[]).map((x) => x.code);
+  const byCheck = new Map<string, { i: string; n: number; r: number; m: string; p: string | null }[]>();
+  for (const x of res.results as { i: string; n: number; r: number; m: string; p: string | null }[]) {
+    (byCheck.get(x.i) ?? byCheck.set(x.i, []).get(x.i)!).push(x);
   }
-  // ไม่อนุมัติ: when, by whom and why
-  const rejected: Record<string, { rejected_at: string | null; rejected_by: string | null; reject_reason: string }> = {};
-  if (results.length) {
-    const { results: rows } = await env.DB.prepare(
-      `SELECT id, rejected_at, rejected_by, reject_reason FROM vehicle_inspections
-       WHERE rejected_at IS NOT NULL AND id IN (SELECT value FROM json_each(?1))`,
-    ).bind(JSON.stringify(results.map((r) => r.id))).all<{ id: string; rejected_at: string | null; rejected_by: string | null; reject_reason: string }>();
-    for (const x of rows) rejected[x.id] = { rejected_at: x.rejected_at, rejected_by: x.rejected_by, reject_reason: x.reject_reason };
-  }
-  return json(results.map((r) => ({
-    ...vehOut(r), defects: defects[r.id as string] ?? {},
-    ...(rejected[r.id as string] ?? { rejected_at: null, rejected_by: null, reject_reason: '' }),
-  })));
+  const photosOf = new Map<string, Record<string, string>>();
+  for (const x of pho.results as { i: string; s: string; k: string }[]) (photosOf.get(x.i) ?? photosOf.set(x.i, {}).get(x.i)!)[x.s] = x.k;
+
+  return json(rows.map((r) => {
+    const id = r.id as string;
+    const list = byCheck.get(id) ?? [];
+    const results: Record<string, number> = {};
+    const defects: Record<string, { note: string; photo: string | null }> = {};
+    let pass = 0, fail = 0, na = 0;
+    for (const x of list) {
+      results[String(x.n)] = x.r;
+      if (x.r === 1) pass++;
+      else if (x.r === 2) { fail++; defects[String(x.n)] = { note: x.m, photo: x.p }; }
+      else if (x.r === 3) na++;
+    }
+    const missingItems = activeItems.filter((n) => results[n] === undefined).length;
+    const photos = photosOf.get(id) ?? {};
+    const photoCount = Object.keys(photos).length;
+    const photoMissing = activeSlots.filter((s) => photos[s] === undefined).length;
+    const declared = r.declared_result as number | null;
+    // same rules as v_vehicle_inspection_summary (0002_views.sql)
+    const out = vehOut({
+      ...r,
+      results: JSON.stringify(results), photos: JSON.stringify(photos),
+      fail_items: JSON.stringify(list.filter((x) => x.r === 2).map((x) => x.n).sort((a, b) => a - b)),
+      pass_count: pass, fail_count: fail, na_count: na, filled_count: list.length, photo_count: photoCount,
+      overall_result: fail > 0 || declared === 2 ? 2 : missingItems === 0 ? 1 : null,
+      completeness: missingItems === 0 ? 'ครบ' : 'ไม่ครบ',
+      result_mismatch: declared !== null && list.length > 0 && declared !== (fail > 0 ? 2 : 1) ? 1 : 0,
+      photo_status: photoMissing === 0 ? 1 : photoCount > 0 ? 2 : 0,
+    });
+    return { ...out, defects, rejected_at: r.rejected_at ?? null, rejected_by: r.rejected_by ?? null, reject_reason: r.reject_reason ?? '' };
+  }));
 }
 
 export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
@@ -465,12 +518,54 @@ function ppeOut(r: Row) {
   };
 }
 
+/**
+ * PPE sheets for a day / month / range, with the same fields as v_ppe_inspection_summary.
+ * Results are read once and counted in the Worker (the view re-scans them 5× per sheet) — ~80% fewer D1 rows read.
+ */
 export async function listPpeInspections({ env, url }: Ctx) {
   const f = dateFilter(url);
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM v_ppe_inspection_summary WHERE ${f.sql} ORDER BY inspect_date, employee_id`,
+  const { results: rows } = await env.DB.prepare(
+    `SELECT pi.id, pi.inspect_date, pi.month, pi.employee_id, pi.inspector_id, coalesce(v.plate, '') AS plate,
+            pi.vehicle_inspection_id, pi.note, pi.approved_by, pi.approved_at,
+            pi.created_by, pi.updated_by, pi.created_at, pi.updated_at
+     FROM ppe_inspections pi
+     JOIN employees e     ON e.id = pi.employee_id
+     JOIN employees i     ON i.id = pi.inspector_id
+     LEFT JOIN vehicles v ON v.id = pi.vehicle_id
+     WHERE ${f.sql.replace(/inspect_date/g, 'pi.inspect_date')}
+     ORDER BY pi.inspect_date, pi.employee_id`,
   ).bind(...f.args).all<Row>();
-  return json(results.map(ppeOut));
+  if (!rows.length) return json([]);
+
+  const [res, items] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT ppe_inspection_id AS i, ppe_code AS c, result AS r FROM ppe_inspection_results
+       WHERE ppe_inspection_id IN (SELECT value FROM json_each(?1))`,
+    ).bind(JSON.stringify(rows.map((r) => r.id))),
+    env.DB.prepare(`SELECT code, sort_order, active FROM ppe_items`),
+  ]);
+  const itemList = items.results as { code: string; sort_order: number; active: number }[];
+  const order = new Map(itemList.map((x) => [x.code, x]));
+  const active = itemList.filter((x) => x.active === 1).map((x) => x.code);
+  const bySheet = new Map<string, { c: string; r: number }[]>();
+  for (const x of res.results as { i: string; c: string; r: number }[]) (bySheet.get(x.i) ?? bySheet.set(x.i, []).get(x.i)!).push(x);
+
+  return json(rows.map((r) => {
+    const list = bySheet.get(r.id as string) ?? [];
+    const results: Record<string, number> = {};
+    for (const x of list) results[x.c] = x.r;
+    const missing = list.filter((x) => x.r === 2);
+    const missingRequired = active.filter((c) => results[c] === undefined).length;
+    // same rules as v_ppe_inspection_summary (0002_views.sql)
+    const missingItems = missing.filter((x) => order.has(x.c)).map((x) => x.c)
+      .sort((a, b) => order.get(a)!.sort_order - order.get(b)!.sort_order || a.localeCompare(b));
+    return ppeOut({
+      ...r,
+      results: JSON.stringify(results), missing_items: JSON.stringify(missingItems),
+      have_count: list.filter((x) => x.r === 1).length, missing_count: missing.length, filled_count: list.length,
+      status: missingRequired > 0 ? 'ไม่ครบ' : missing.length > 0 ? 'อุปกรณ์ไม่ครบ' : 'ครบ',
+    });
+  }));
 }
 
 /** who a vehicle check belongs to: the account that saved it and the crew on it */
@@ -747,8 +842,7 @@ const REPORTS: Record<string, { view: string; dateCol: string; order: string }> 
   'ppe-item-results': { view: 'v_ppe_item_results', dateCol: 'inspect_date', order: 'inspect_date, employee_id, ppe_code' },
   'mileage-check': { view: 'v_mileage_check', dateCol: 'inspect_date', order: 'plate, inspect_date' },
   'trip-activities': { view: 'v_trip_activity_summary', dateCol: 'activity_date', order: 'activity_date, work_started_at, plate' },
-  'trip-area-results': { view: 'v_trip_area_results', dateCol: 'activity_date', order: 'activity_date, plate, area_code' },
-  'trip-area-monthly': { view: 'v_trip_area_monthly', dateCol: '', order: 'month, sort_order' },
+  'vehicle-days': { view: 'v_vehicle_day_summary', dateCol: '', order: 'date, plate' },
 };
 
 function csvCell(v: unknown): string {

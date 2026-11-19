@@ -118,3 +118,12 @@ export const ReportIcon = () => (
     <path d="M8.5 16v-3M12 16v-6M15.5 16v-4.5" />
   </Svg>
 );
+
+/** Photo / picture (used for "รูปภาพ"). */
+export const ImageIcon = () => (
+  <Svg>
+    <rect x="3.5" y="5" width="17" height="14" rx="2" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="m4 17.5 5-4.5 3.5 3 3-2.5 4.5 4" />
+  </Svg>
+);

@@ -4,7 +4,8 @@
  *   — nothing when there is no check yet.
  * Computed from vehicle_inspections.approved_at; nothing about the badge is stored.
  * "My team" = the same rule as the PPE / Time tabs (saved by me, or my employee ID is on the crew).
- * Refreshes every minute, when the page comes back into view, and right after a check is saved.
+ * Refreshes every 5 minutes, when the page comes back into view, and right after a check is saved
+ * (kept low on purpose: every refresh costs D1 rows read for each open phone).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { listVehicleInspections, type Me } from '../lib/api';
@@ -51,7 +52,7 @@ export function useMyCheckBadge(me: Me | null): CheckBadge | undefined {
 
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 60_000);
+    const t = window.setInterval(load, 5 * 60_000);
     const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener(VEHICLE_CHECK_CHANGED, load);
     document.addEventListener('visibilitychange', onVisible);
