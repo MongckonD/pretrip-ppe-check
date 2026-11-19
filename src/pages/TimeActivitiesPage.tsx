@@ -1,13 +1,15 @@
 /**
  * Time activities = the work clock of today's vehicle team, three boxes:
  *   1. vehicle / D-Man (from today's vehicle check) and "เริ่มการทำงาน" — the press is the start time
- *   2. ร้านค้า (shops) — to be designed
+ *   2. ร้านค้า: store-visit timer (Time & Motion, A/B/C/D activities) — separate from the work clock;
+ *      trial version: data stays in this browser per account until the database design is agreed (components/StoreVisits.tsx)
  *   3. end of the day: live timer and "จบงาน / หยุดเวลาทำงาน"
  * Start and end are stamped by the server (trip_activities.work_started_at / work_ended_at), one record per vehicle per day.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ReadOnlyField, thaiDay, useNow } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
+import { StoreVisits } from '../components/StoreVisits';
 import { CheckPicker, NoCheckYet, useTodayChecks } from '../components/TodayChecks';
 import { useToast } from '../components/Toast';
 import { endWork, listTripActivities, startWork } from '../lib/api';
@@ -97,10 +99,10 @@ export function TimeActivitiesPage({ goVehicle }: { goVehicle?: () => void }) {
         )}
       </section>
 
-      {/* box 2: shops (ร้านค้า) — to be designed */}
+      {/* box 2: store-visit timer (separate from the work clock) */}
       <section className="panel">
-        <h2>ร้านค้า</h2>
-        <div className="empty">ส่วนสร้างร้านค้า — กำลังจัดทำ</div>
+        <h2>ร้านค้า · จับเวลาส่งสินค้า</h2>
+        {check && <StoreVisits plate={check.plate} />}
       </section>
 
       {/* box 3: end of the day — stop the work clock */}
