@@ -7,7 +7,7 @@
  *   - with several checks today, a row of buttons lets you switch vehicle
  */
 import { useCallback, useEffect, useState } from 'react';
-import { listVehicleInspections } from '../lib/api';
+import { listVehicleInspections, type Me } from '../lib/api';
 import type { VehicleInspection } from '../lib/types';
 import { errMsg } from '../lib/utils';
 import { useMe } from './Auth';
@@ -18,6 +18,12 @@ import { useToast } from './Toast';
 const newest = (a: VehicleInspection, b: VehicleInspection) =>
   (b.updated_at ?? b.inspect_time ?? '').localeCompare(a.updated_at ?? a.inspect_time ?? '');
 
+/** my team's check: saved by me, or my employee ID is the D-Man / a helper (test mode, no login: every check) */
+export function isMyCheck(me: Me | null, c: VehicleInspection) {
+  return !me || c.created_by === me.id
+    || (!!me.employee_id && [c.dman_id, c.helper1_id, c.helper2_id].includes(me.employee_id));
+}
+
 export function useTodayChecks(day: string) {
   const me = useMe();
   const toast = useToast();
@@ -26,9 +32,7 @@ export function useTodayChecks(day: string) {
 
   const reload = useCallback(async () => {
     try {
-      const mine = (c: VehicleInspection) => !me || c.created_by === me.id
-        || (!!me.employee_id && [c.dman_id, c.helper1_id, c.helper2_id].includes(me.employee_id));
-      setChecks((await listVehicleInspections({ date: day })).filter(mine).sort(newest));
+      setChecks((await listVehicleInspections({ date: day })).filter((c) => isMyCheck(me, c)).sort(newest));
     } catch (e) { setChecks([]); toast('โหลดข้อมูลการตรวจรถไม่สำเร็จ: ' + errMsg(e)); }
   }, [day, toast, me]);
   useEffect(() => { reload(); }, [reload]);

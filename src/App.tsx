@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell, type TabDef } from './components/AppShell';
 import { AuthGate } from './components/AuthGate';
+import { TabBadge, useMyCheckBadge } from './components/CheckStatus';
 import { ConsentScreen } from './components/Consent';
 import { ClockIcon, IdCardIcon, TruckIcon, VestIcon } from './components/Icons';
 import { getMyLicense, isTestMode, type Me } from './lib/api';
@@ -37,10 +38,12 @@ function StaffShell({ me, onLogout, onboarding }: { me: Me | null; onLogout?: ()
   }, []);
   useEffect(() => { loadLicense(); }, [loadLicense]);
 
+  // approval status of my team's vehicle check today, next to the "ตรวจรถ" tab
+  const checkBadge = useMyCheckBadge(me);
   const tabs = useMemo<TabDef[]>(() => [
-    ...WORK_TABS,
+    ...WORK_TABS.map((t) => (t.key === 'veh' && checkBadge ? { ...t, badge: <TabBadge b={checkBadge} /> } : t)),
     { key: 'license', path: '/license', label: 'ใบขับขี่', title: 'ใบขับขี่', icon: IdCardIcon, render: () => <LicensePage info={lic} onSaved={setLic} /> },
-  ], [lic]);
+  ], [lic, checkBadge]);
 
   // staff must have a licence on file before entering (the Worker enforces this too)
   if (onboarding) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { notifyVehicleCheckChanged } from '../components/CheckStatus';
 import { useMe } from '../components/Auth';
 import { useMaster } from '../components/MasterContext';
 import { EmployeeSelect, PlateInput, ReadOnlyField, Seg, fromIso, thaiClock, thaiDay, useNow, useSignedUrls } from '../components/Fields';
@@ -19,6 +20,16 @@ const blankForm = (keep?: Partial<VehicleForm>): VehicleForm => ({
   plate: '', mileage: '', note: '', results: {}, photos: {}, defects: {}, ...keep,
 });
 
+/** a sent check back into the form (to fix it after ไม่อนุมัติ) */
+const formFrom = (r: VehicleInspection): VehicleForm => ({
+  id: r.id, date: r.inspect_date, time: (r.inspect_time ?? '').slice(0, 5),
+  dman: r.dman_id, h1: r.helper1_id ?? '', h2: r.helper2_id ?? '',
+  plate: r.plate, mileage: r.mileage == null ? '' : String(r.mileage), note: r.note ?? '',
+  results: Object.fromEntries(Object.entries(r.results ?? {}).map(([k, v]) => [Number(k), v])) as VehicleForm['results'],
+  photos: { ...(r.photos ?? {}) },
+  defects: Object.fromEntries(Object.entries(r.defects ?? {}).map(([k, d]) => [Number(k), { note: d.note, photo: d.photo }])),
+});
+
 /** sessionStorage: the check whose summary the user closed with "ตรวจรถคันอื่น" (show the form instead) */
 const NEW_FORM_KEY = 'veh-new-form-after';
 const readKey = () => { try { return sessionStorage.getItem(NEW_FORM_KEY); } catch { return null; } };
@@ -35,6 +46,8 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
   const me = useMe();
   // undefined = still loading; null = show the form
   const [summary, setSummary] = useState<VehicleInspection | null | undefined>(undefined);
+  // a sent check being fixed (after ไม่อนุมัติ, or before it is approved)
+  const [editing, setEditing] = useState<VehicleInspection | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -49,22 +62,29 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
   }, [me]);
 
   if (summary === undefined) return <div className="empty">กำลังโหลด…</div>;
-  if (summary) {
+  if (summary && !editing) {
     return (
       <CheckSummary r={summary} onPpe={goPpe}
+        onEdit={summary.approved_at ? undefined : () => setEditing(summary)}
         onAnother={() => { writeKey(summary.id); setSummary(null); }} />
     );
   }
-  return <VehicleForm onSaved={(r) => { writeKey(null); setSummary(r); }} />;
+  return (
+    <VehicleForm key={editing?.id ?? 'new'} initial={editing ? formFrom(editing) : undefined}
+      onCancelEdit={editing ? () => setEditing(null) : undefined}
+      onSaved={(r) => { writeKey(null); setEditing(null); setSummary(r); notifyVehicleCheckChanged(); }} />
+  );
 }
 
-function VehicleForm({ onSaved: setSummary }: { onSaved: (r: VehicleInspection | null) => void }) {
+function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
+  onSaved: (r: VehicleInspection | null) => void; initial?: VehicleForm; onCancelEdit?: () => void;
+}) {
   const { checkItems, photoSlots } = useMaster();
   const toast = useToast();
   const items = checkItems.filter((i) => i.active);
   const total = items.length;
 
-  const [f, setF] = useState<VehicleForm>(() => blankForm());
+  const [f, setF] = useState<VehicleForm>(() => initial ?? blankForm());
   // today's records: not shown on this page, only used to warn before replacing a plate's earlier check
   const [records, setRecords] = useState<VehicleInspection[]>([]);
   const [saving, setSaving] = useState(false);
@@ -172,7 +192,7 @@ function VehicleForm({ onSaved: setSummary }: { onSaved: (r: VehicleInspection |
       return toast(`ระบุหมายเหตุของข้อที่ไม่ผ่าน: ข้อ ${noNote.join(', ')}`);
     }
     if (f.mileage && !/^\d+$/.test(f.mileage.trim())) return toast('เลขไมล์ต้องเป็นตัวเลข');
-    const dup = records.find((r) => r.plate === f.plate.trim());
+    const dup = records.find((r) => r.plate === f.plate.trim() && r.id !== f.id);
     if (dup && !window.confirm(`ทะเบียน ${dup.plate} มีบันทึกการตรวจของวันนี้แล้ว
 บันทึกครั้งนี้จะแทนที่ของเดิม ต้องการบันทึกต่อไหม?`)) return;
     setSaving(true);
@@ -199,7 +219,7 @@ function VehicleForm({ onSaved: setSummary }: { onSaved: (r: VehicleInspection |
 
   return (
     <section className="panel">
-      <h2>ตรวจรถประจำวัน</h2>
+      <h2>{f.id ? `แก้ไขการตรวจรถ ${f.plate}` : 'ตรวจรถประจำวัน'}</h2>
       <div className="form-head">
         <div className="field-group">ข้อมูลรถ</div>
         <div className="fields c4">
@@ -285,16 +305,21 @@ function VehicleForm({ onSaved: setSummary }: { onSaved: (r: VehicleInspection |
         <span className={`note ${fails ? 'fail-text' : ''}`}>
           {fails ? `พบ ${fails} ข้อไม่ผ่าน ผลตรวจ: ไม่ผ่าน` : done ? 'ผลตรวจ: ผ่าน' : 'ยังไม่ได้ตรวจ'}
         </span>
-        <button className="btn" type="button" disabled={saving || uploading !== null} onClick={save}>
-          {saving ? 'กำลังบันทึก…' : 'บันทึกการตรวจ'}
-        </button>
+        <div className="row">
+          {onCancelEdit && <button className="btn ghost" type="button" disabled={saving} onClick={onCancelEdit}>ยกเลิกการแก้ไข</button>}
+          <button className="btn" type="button" disabled={saving || uploading !== null} onClick={save}>
+            {saving ? 'กำลังบันทึก…' : f.id ? 'ส่งข้อมูลที่แก้ไขอีกครั้ง' : 'บันทึกการตรวจ'}
+          </button>
+        </div>
       </div>
     </section>
   );
 }
 
 /** Shown right after sending a vehicle check: what was recorded and that it now waits for review/approval. */
-function CheckSummary({ r, onPpe, onAnother }: { r: VehicleInspection; onPpe?: () => void; onAnother: () => void }) {
+function CheckSummary({ r, onPpe, onAnother, onEdit }: {
+  r: VehicleInspection; onPpe?: () => void; onAnother: () => void; onEdit?: () => void;
+}) {
   const { checkItems, photoSlots, nameOf } = useMaster();
   const total = checkItems.filter((i) => i.active).length;
   const itemName = new Map(checkItems.map((i) => [i.item_no, i.name]));
@@ -311,13 +336,24 @@ function CheckSummary({ r, onPpe, onAnother }: { r: VehicleInspection; onPpe?: (
 
   return (
     <section className="panel sum">
-      <div className={`sum-status ${approved ? 'ok' : 'wait'}`} role="status">
-        <span className="sum-icon" aria-hidden="true">{approved ? '✓' : '⏳'}</span>
-        <div>
-          <b>{approved ? 'อนุมัติแล้ว' : 'ส่งข้อมูลแล้ว · รอการตรวจสอบ / รอการอนุมัติ'}</b>
-          <span>{approved ? 'หัวหน้าตรวจสอบและอนุมัติแล้ว' : 'ผลการตรวจนี้จะถูกตรวจสอบและอนุมัติโดยหัวหน้า'}</span>
+      {r.rejected_at ? (
+        <div className="sum-status bad" role="status">
+          <span className="sum-icon" aria-hidden="true">✕</span>
+          <div>
+            <b>ไม่อนุมัติ</b>
+            <span>เหตุผล: {r.reject_reason || '—'}</span>
+            <span className="sum-status-hint">กด "แก้ไขการตรวจคันนี้" แก้ตามเหตุผลแล้วส่งอีกครั้ง — สถานะจะกลับเป็นรออนุมัติ</span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className={`sum-status ${approved ? 'ok' : 'wait'}`} role="status">
+          <span className="sum-icon" aria-hidden="true">{approved ? '✓' : '⏳'}</span>
+          <div>
+            <b>{approved ? 'อนุมัติแล้ว' : 'ส่งข้อมูลแล้ว · รอการตรวจสอบ / รอการอนุมัติ'}</b>
+            <span>{approved ? 'หัวหน้าตรวจสอบและอนุมัติแล้ว' : 'ผลการตรวจนี้จะถูกตรวจสอบและอนุมัติโดยหัวหน้า'}</span>
+          </div>
+        </div>
+      )}
 
       <h2 className="sum-title">สรุปผลการตรวจรถ <span className={`pill ${verdict.cls}`}>ผลตรวจ: {verdict.text}</span></h2>
       <dl className="sum-meta">
@@ -349,7 +385,9 @@ function CheckSummary({ r, onPpe, onAnother }: { r: VehicleInspection; onPpe?: (
       )}
 
       <div className="sum-actions">
-        {onPpe && <button className="btn" onClick={onPpe}>ตรวจ PPE ของทีมต่อ</button>}
+        {r.rejected_at && onEdit && <button className="btn" onClick={onEdit}>แก้ไขการตรวจคันนี้</button>}
+        {onPpe && <button className={`btn ${r.rejected_at ? 'ghost' : ''}`} onClick={onPpe}>ตรวจ PPE ของทีมต่อ</button>}
+        {!r.rejected_at && onEdit && <button className="btn ghost" onClick={onEdit}>แก้ไขการตรวจคันนี้</button>}
         <button className="btn ghost" onClick={onAnother}>ตรวจรถคันอื่น</button>
       </div>
     </section>

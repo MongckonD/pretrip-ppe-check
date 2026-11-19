@@ -17,6 +17,8 @@ interface VehRow {
   helper1_id: string | null; helper2_id: string | null; plate: string; mileage: number | null; note: string;
   results: Record<string, VehResult>; photos: Record<string, string>;
   defects?: Record<string, Defect>;
+  approved_at?: string | null; approved_by?: string | null;
+  rejected_at?: string | null; rejected_by?: string | null; reject_reason?: string;
 }
 interface PpeRow {
   id: string; inspect_date: string; employee_id: string; inspector_id: string; plate: string;
@@ -193,6 +195,36 @@ export async function listVehicleInspections(opts: { date?: string; month?: stri
     .map(vehSummary);
 }
 
+/** admin: approve / undo approval (test mode: approver is "admin") */
+export async function setVehicleApproval(id: string, approve: boolean) {
+  await tick();
+  const db = load();
+  const r = db.veh.find((x) => x.id === id);
+  if (!r) throw new Error('ไม่พบบันทึกนี้');
+  if (r.approved_at) {
+    if (approve) return;
+    throw new Error('อนุมัติแล้ว ยกเลิกหรือแก้ไขการอนุมัติไม่ได้');
+  }
+  r.approved_at = approve ? new Date().toISOString() : null;
+  r.approved_by = approve ? 'admin' : null;
+  if (approve) { r.rejected_at = null; r.rejected_by = null; r.reject_reason = ''; }
+  persist();
+}
+
+/** admin: ไม่อนุมัติ with a reason, or undo (reason = null) */
+export async function setVehicleRejection(id: string, reason: string | null) {
+  await tick();
+  const db = load();
+  const r = db.veh.find((x) => x.id === id);
+  if (!r) throw new Error('ไม่พบบันทึกนี้');
+  if (reason !== null && !reason.trim()) throw new Error('ระบุเหตุผลที่ไม่อนุมัติ');
+  if (r.approved_at) throw new Error('อนุมัติแล้ว เปลี่ยนเป็นไม่อนุมัติไม่ได้');
+  r.rejected_at = reason === null ? null : new Date().toISOString();
+  r.rejected_by = reason === null ? null : 'admin';
+  r.reject_reason = reason?.trim() ?? '';
+  persist();
+}
+
 export async function saveVehicleInspection(f: VehicleForm) {
   await tick();
   const db = load();
@@ -216,7 +248,9 @@ export async function saveVehicleInspection(f: VehicleForm) {
   let target = f.id ? db.veh.find((r) => r.id === f.id) : undefined;
   if (target && clash) throw new Error('duplicate key value violates unique constraint "vehicle_inspections_day_plate_uq"');
   target ??= clash;
-  if (target) Object.assign(target, row);
+  if (target?.approved_at) throw new Error('รายการนี้หัวหน้าอนุมัติแล้ว แก้ไขไม่ได้ (ต้องยกเลิกอนุมัติก่อน)');
+  // same as the server: re-sending clears a ไม่อนุมัติ (back to รออนุมัติ)
+  if (target) Object.assign(target, row, { rejected_at: null, rejected_by: null, reject_reason: '' });
   else db.veh.push((target = { id: uuid(), ...row }));
   persist();
   return target.id;

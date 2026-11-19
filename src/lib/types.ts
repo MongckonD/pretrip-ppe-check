@@ -49,6 +49,10 @@ export interface VehicleInspection {
   /** set when an admin approves the check (null = waiting for approval) */
   approved_at?: string | null;
   approved_by?: string | null;
+  /** set when an admin rejects the check (ไม่อนุมัติ) with a reason; cleared when staff re-send or an admin approves */
+  rejected_at?: string | null;
+  rejected_by?: string | null;
+  reject_reason?: string;
   /** who saved it and when (real backend only) */
   created_by?: string | null;
   updated_at?: string;

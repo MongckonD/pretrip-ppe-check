@@ -49,6 +49,8 @@ export async function readJson(req: Request): Promise<Record<string, unknown>> {
  */
 export function mapDbError(e: unknown): HttpError | null {
   const msg = String((e as { message?: string })?.message ?? e) + ' ' + String((e as { cause?: { message?: string } })?.cause?.message ?? '');
+  if (msg.includes('APPROVAL_FINAL:')) return conflict('อนุมัติแล้ว ยกเลิกหรือแก้ไขการอนุมัติไม่ได้');
+  if (msg.includes('REJECT_STATE:')) return bad('ไม่อนุมัติต้องมีเหตุผล และอนุมัติพร้อมกันไม่ได้');
   if (msg.includes('LOCKED:')) return conflict('รายการนี้หัวหน้าอนุมัติแล้ว แก้ไขหรือลบไม่ได้ (ต้องยกเลิกอนุมัติก่อน)');
   if (msg.includes('TRIP_VEHICLE_MISMATCH')) return conflict('บันทึกก่อนออกงานที่ผูกกับใบตรวจรถต้องเป็นวันและรถเดียวกัน');
   if (msg.includes('UNIQUE constraint failed: trip_activities')) return conflict('รถคันนี้มีบันทึกก่อนออกงานของวันนี้แล้ว');

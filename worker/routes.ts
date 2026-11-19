@@ -248,7 +248,19 @@ export async function listVehicleInspections({ env, url }: Ctx) {
     ).bind(JSON.stringify(results.map((r) => r.id))).all<{ inspection_id: string; item_no: number; remark: string; photo_r2_key: string | null }>();
     for (const d of rows) (defects[d.inspection_id] ??= {})[String(d.item_no)] = { note: d.remark, photo: d.photo_r2_key };
   }
-  return json(results.map((r) => ({ ...vehOut(r), defects: defects[r.id as string] ?? {} })));
+  // ไม่อนุมัติ: when, by whom and why
+  const rejected: Record<string, { rejected_at: string | null; rejected_by: string | null; reject_reason: string }> = {};
+  if (results.length) {
+    const { results: rows } = await env.DB.prepare(
+      `SELECT id, rejected_at, rejected_by, reject_reason FROM vehicle_inspections
+       WHERE rejected_at IS NOT NULL AND id IN (SELECT value FROM json_each(?1))`,
+    ).bind(JSON.stringify(results.map((r) => r.id))).all<{ id: string; rejected_at: string | null; rejected_by: string | null; reject_reason: string }>();
+    for (const x of rows) rejected[x.id] = { rejected_at: x.rejected_at, rejected_by: x.rejected_by, reject_reason: x.reject_reason };
+  }
+  return json(results.map((r) => ({
+    ...vehOut(r), defects: defects[r.id as string] ?? {},
+    ...(rejected[r.id as string] ?? { rejected_at: null, rejected_by: null, reject_reason: '' }),
+  })));
 }
 
 export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
@@ -367,6 +379,7 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
          inspect_date = excluded.inspect_date, inspect_time = excluded.inspect_time,
          vehicle_id = excluded.vehicle_id, mileage = excluded.mileage, dman_id = excluded.dman_id,
          helper1_id = excluded.helper1_id, helper2_id = excluded.helper2_id, note = excluded.note,
+         rejected_at = NULL, rejected_by = NULL, reject_reason = '',
          updated_by = excluded.updated_by, updated_at = ${NOW_SQL}`,
     ).bind(id, date, time, vehicle.id, mileage, dman, h1, h2, note, actor.id),
     env.DB.prepare(`DELETE FROM vehicle_inspection_results WHERE inspection_id = ?1`).bind(id),
@@ -578,9 +591,12 @@ function approval(table: 'vehicle_inspections' | 'ppe_inspections', approve: boo
     const cur = await env.DB.prepare(`SELECT approved_at FROM ${table} WHERE id = ?1`).bind(id).first<{ approved_at: string | null }>();
     if (!cur) throw notFound('ไม่พบบันทึกนี้');
     if (approve === !!cur.approved_at) return json({ ok: true, approved: approve }); // already in that state
+    // a vehicle check's approval is final: it cannot be undone
+    if (!approve && table === 'vehicle_inspections') throw conflict('อนุมัติแล้ว ยกเลิกหรือแก้ไขการอนุมัติไม่ได้');
     await env.DB.batch([
       approve
-        ? env.DB.prepare(`UPDATE ${table} SET approved_by = ?2, approved_at = ${NOW_SQL}, updated_by = ?2 WHERE id = ?1`).bind(id, actor.id)
+        ? env.DB.prepare(`UPDATE ${table} SET approved_by = ?2, approved_at = ${NOW_SQL}, updated_by = ?2${
+            table === 'vehicle_inspections' ? `, rejected_at = NULL, rejected_by = NULL, reject_reason = ''` : ''} WHERE id = ?1`).bind(id, actor.id)
         : env.DB.prepare(`UPDATE ${table} SET approved_by = NULL, approved_at = NULL, updated_by = ?2 WHERE id = ?1`).bind(id, actor.id),
       audit(env, actor, approve ? 'approve' : 'unapprove', table, id),
     ]);
@@ -590,6 +606,43 @@ function approval(table: 'vehicle_inspections' | 'ppe_inspections', approve: boo
 export const approveVehicle = approval('vehicle_inspections', true);
 export const unapproveVehicle = approval('vehicle_inspections', false);
 export const approvePpe = approval('ppe_inspections', true);
+
+/**
+ * Admin "ไม่อนุมัติ" a vehicle check, with a reason (required). Not possible once it is approved (approval is final).
+ * Staff can then fix and re-send it, which clears the rejection.
+ */
+export async function rejectVehicle({ env, actor, params, req }: Ctx) {
+  requireRole(actor, 'admin');
+  const id = decodeURIComponent(params[0]);
+  const b = await readJson(req);
+  const reason = str(b.reason, 'เหตุผลที่ไม่อนุมัติ', 500);
+  if (!reason) throw bad('ระบุเหตุผลที่ไม่อนุมัติ');
+  const cur = await env.DB.prepare(`SELECT approved_at FROM vehicle_inspections WHERE id = ?1`).bind(id).first<{ approved_at: string | null }>();
+  if (!cur) throw notFound('ไม่พบบันทึกนี้');
+  if (cur.approved_at) throw conflict('อนุมัติแล้ว เปลี่ยนเป็นไม่อนุมัติไม่ได้');
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE vehicle_inspections SET rejected_at = ${NOW_SQL}, rejected_by = ?2, reject_reason = ?3, updated_by = ?2 WHERE id = ?1`,
+    ).bind(id, actor.id, reason),
+    audit(env, actor, 'update', 'vehicle_inspections', id, { status: 'rejected', reason }),
+  ]);
+  return json({ ok: true, rejected: true });
+}
+
+/** Admin undoes a rejection → back to รออนุมัติ */
+export async function unrejectVehicle({ env, actor, params }: Ctx) {
+  requireRole(actor, 'admin');
+  const id = decodeURIComponent(params[0]);
+  const cur = await env.DB.prepare(`SELECT rejected_at FROM vehicle_inspections WHERE id = ?1`).bind(id).first<{ rejected_at: string | null }>();
+  if (!cur) throw notFound('ไม่พบบันทึกนี้');
+  if (!cur.rejected_at) return json({ ok: true, rejected: false });
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE vehicle_inspections SET rejected_at = NULL, rejected_by = NULL, reject_reason = '', updated_by = ?2 WHERE id = ?1`)
+      .bind(id, actor.id),
+    audit(env, actor, 'update', 'vehicle_inspections', id, { status: 'pending', undo: 'rejected' }),
+  ]);
+  return json({ ok: true, rejected: false });
+}
 export const unapprovePpe = approval('ppe_inspections', false);
 
 /* =====================================================================

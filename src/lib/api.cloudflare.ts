@@ -117,6 +117,18 @@ export async function deleteVehicle(id: string) {
 export const listVehicleInspections = (opts: { date?: string; month?: string }) =>
   call<VehicleInspection[]>('GET', `/api/vehicle-inspections?${q(opts)}`);
 
+/** admin: approve a vehicle check (final — the server refuses approve=false once approved) */
+export async function setVehicleApproval(id: string, approve: boolean) {
+  await call(approve ? 'POST' : 'DELETE', `/api/vehicle-inspections/${encodeURIComponent(id)}/approval`);
+}
+
+/** admin: reject (ไม่อนุมัติ) with a reason, or undo the rejection (reason = null) */
+export async function setVehicleRejection(id: string, reason: string | null) {
+  const path = `/api/vehicle-inspections/${encodeURIComponent(id)}/rejection`;
+  if (reason === null) await call('DELETE', path);
+  else await call('POST', path, { reason });
+}
+
 /** note + photo only for items that are ไม่ผ่าน */
 export function failedDefects(f: VehicleForm) {
   return Object.fromEntries(Object.entries(f.results).filter(([, v]) => v === 2).map(([k]) => {

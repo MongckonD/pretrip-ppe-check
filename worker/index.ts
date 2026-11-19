@@ -61,6 +61,8 @@ const ROUTES: Route[] = [
   { m: 'DELETE', re: /^\/api\/vehicle-inspections\/([^/]+)$/, h: r.deleteVehicleInspection },
   { m: 'POST', re: /^\/api\/vehicle-inspections\/([^/]+)\/approval$/, h: r.approveVehicle },
   { m: 'DELETE', re: /^\/api\/vehicle-inspections\/([^/]+)\/approval$/, h: r.unapproveVehicle },
+  { m: 'POST', re: /^\/api\/vehicle-inspections\/([^/]+)\/rejection$/, h: r.rejectVehicle },
+  { m: 'DELETE', re: /^\/api\/vehicle-inspections\/([^/]+)\/rejection$/, h: r.unrejectVehicle },
 
   { m: 'GET', re: /^\/api\/ppe-inspections$/, h: r.listPpeInspections },
   { m: 'POST', re: /^\/api\/ppe-inspections$/, h: r.savePpeInspections },

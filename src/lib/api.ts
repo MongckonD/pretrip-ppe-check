@@ -13,7 +13,7 @@ const api = isTestMode ? mock : cloud;
 
 export const {
   loadMaster, upsertEmployee, upsertVehicle, deleteVehicle,
-  listVehicleInspections, saveVehicleInspection, deleteVehicleInspection,
+  listVehicleInspections, saveVehicleInspection, deleteVehicleInspection, setVehicleApproval, setVehicleRejection,
   uploadPhoto, removePhotos, signedUrls,
   listPpeInspections, savePpeInspections, deletePpeInspection,
   listTripActivities, deleteTripActivity, startWork, endWork,

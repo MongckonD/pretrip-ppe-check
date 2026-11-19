@@ -24,6 +24,8 @@ export interface TabDef {
   title: string;
   icon: () => JSX.Element;
   render: (c: PageCtx) => ReactNode;
+  /** optional status next to the label (e.g. vehicle-check approval) */
+  badge?: ReactNode;
 }
 
 export interface ShellProps {
@@ -130,7 +132,7 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
           <nav className="nav" role="tablist" aria-label="เมนูหลัก" aria-orientation="vertical">
             {tabs.map((t) => (
               <button key={t.key} role="tab" aria-selected={tab === t.key} aria-label={t.label} onClick={() => go(t.key)}>
-                <t.icon /><span className="nav-full">{t.label}</span><span className="nav-short">{t.short ?? t.label}</span>
+                <t.icon /><span className="nav-full">{t.label}</span><span className="nav-short">{t.short ?? t.label}</span>{t.badge}
               </button>
             ))}
           </nav>
