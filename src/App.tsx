@@ -1,115 +1,90 @@
+/**
+ * Staff web page (`/`): daily work for everyone — vehicle check, PPE, Time activities, driver licence.
+ * Role `user` only. Admins are sent to their own page (`/admin/`, see src/admin/AdminApp.tsx).
+ *
+ * After login a staff member goes through:
+ *   1. personal-data consent (until the current version is accepted)
+ *   2. driver-licence photo (camera only; OCR fills the fields) — shown after every sign-in until a licence is on file;
+ *      "ข้ามไปหน้าหลัก" (allowed while LICENSE_REQUIRED is false) lasts until that account signs out
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from './lib/supabase';
-import { isTestMode, loadMaster } from './lib/api';
-import type { Master } from './lib/types';
-import { errMsg, today } from './lib/utils';
-import { Login } from './components/Login';
-import { MasterContext, buildMasterCtx } from './components/MasterContext';
-import { VehiclePage } from './pages/VehiclePage';
+import { AppShell, type TabDef } from './components/AppShell';
+import { AuthGate } from './components/AuthGate';
+import { TabBadge, useMyCheckBadge } from './components/CheckStatus';
+import { ConsentScreen } from './components/Consent';
+import { DevBadge, DevGate } from './components/DevNotice';
+import { ClockIcon, IdCardIcon, StoreIcon, TimerIcon, TruckIcon, VestIcon } from './components/Icons';
+import { getMyLicense, isTestMode, type Me } from './lib/api';
+import { LICENSE_REQUIRED, readLicenseSkip, writeLicenseSkip, type LicenseInfo } from './lib/license';
+import { errMsg } from './lib/utils';
+import { LicenseBanner, LicenseOnboarding, LicensePage } from './pages/LicensePage';
 import { PpePage } from './pages/PpePage';
-import { DashboardPage } from './pages/DashboardPage';
-import { DataPage } from './pages/DataPage';
-import { SettingsPage } from './pages/SettingsPage';
+import { TimeActivitiesPage } from './pages/TimeActivitiesPage';
+import { VehiclePage } from './pages/VehiclePage';
 
-const TABS = [
-  ['veh', 'ตรวจรถ'],
-  ['ppe', 'PPE'],
-  ['dash', 'ภาพรวม'],
-  ['data', 'ข้อมูล'],
-  ['cfg', 'ตั้งค่า'],
-] as const;
-type Tab = (typeof TABS)[number][0];
+const WORK_TABS: TabDef[] = [
+  { key: 'veh', path: '/vehicle', label: 'ตรวจรถ', title: 'ตรวจรถก่อนออกงาน', icon: TruckIcon, render: (c) => <VehiclePage goPpe={() => c.go('ppe')} /> },
+  { key: 'ppe', path: '/ppe', label: 'PPE', title: 'ตรวจ PPE พนักงาน', icon: VestIcon, render: (c) => <PpePage goVehicle={() => c.go('veh')} goTime={() => c.go('time')} /> },
+  // menu heading only: opens its first sub-tab
+  { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: () => null },
+  { key: 'time-work', parent: 'time', path: '/time-activities/work', label: 'บันทึกเวลาการทำงาน', title: 'บันทึกเวลาการทำงาน', icon: TimerIcon,
+    render: (c) => <TimeActivitiesPage sub="work" goVehicle={() => c.go('veh')} /> },
+  // store-delivery timer: still in development — staff see a notice, the trial opens only on request
+  { key: 'time-store', parent: 'time', path: '/time-activities/store', label: 'บันทึกเวลาส่งสินค้า', title: 'บันทึกเวลาส่งสินค้า', icon: StoreIcon, badge: <DevBadge />,
+    render: (c) => <DevGate id="store-visits" title="บันทึกเวลาส่งสินค้า"><TimeActivitiesPage sub="store" goVehicle={() => c.go('veh')} /></DevGate> },
+];
+
+function StaffShell({ me, onLogout, onboarding }: { me: Me | null; onLogout?: () => void; onboarding: boolean }) {
+  const [lic, setLic] = useState<LicenseInfo | null | undefined>(undefined);
+  // "ข้ามไปหน้าหลัก" counts for this account until it signs out (see lib/license.ts)
+  const [skipped, setSkipped] = useState(() => !LICENSE_REQUIRED && readLicenseSkip(me?.id));
+  const [loadError, setLoadError] = useState('');
+  const loadLicense = useCallback(() => {
+    setLoadError('');
+    getMyLicense().then(setLic).catch((e) => { setLic(null); setLoadError(errMsg(e)); });
+  }, []);
+  useEffect(() => { loadLicense(); }, [loadLicense]);
+
+  // approval status of my team's vehicle check today, next to the "ตรวจรถ" tab
+  const checkBadge = useMyCheckBadge(me);
+  const tabs = useMemo<TabDef[]>(() => [
+    ...WORK_TABS.map((t) => (t.key === 'veh' && checkBadge ? { ...t, badge: <TabBadge b={checkBadge} /> } : t)),
+    { key: 'license', path: '/license', label: 'ใบขับขี่', title: 'ใบขับขี่', icon: IdCardIcon, render: () => <LicensePage info={lic} onSaved={setLic} /> },
+  ], [lic, checkBadge]);
+
+  // staff must have a licence on file before entering (the Worker enforces this too)
+  if (onboarding) {
+    if (lic === undefined) return <div className="center-screen note">กำลังโหลด…</div>;
+    if (loadError) {
+      return (
+        <div className="center-screen">
+          <div className="panel login">
+            <b>โหลดข้อมูลใบขับขี่ไม่สำเร็จ</b>
+            <div className="note">{loadError}</div>
+            <button className="btn" onClick={loadLicense}>ลองใหม่</button>
+          </div>
+        </div>
+      );
+    }
+    if (!lic?.license && !skipped) {
+      const skip = LICENSE_REQUIRED ? undefined : () => { writeLicenseSkip(me?.id); setSkipped(true); };
+      return <LicenseOnboarding onSaved={setLic} onLogout={() => onLogout?.()} onSkip={skip} />;
+    }
+  }
+  return (
+    <AppShell me={me} onLogout={onLogout} tabs={tabs} brandSub="Delivery Team App"
+      banner={(go, cur) => (cur === 'license' ? null : <LicenseBanner info={lic} onOpen={() => go('license')} />)} />
+  );
+}
+
+function StaffArea({ me, signOut }: { me: Me; signOut: () => void }) {
+  const [consented, setConsented] = useState(me.consented);
+  if (!consented) return <ConsentScreen onAccepted={() => setConsented(true)} onLogout={signOut} />;
+  return <StaffShell me={me} onLogout={signOut} onboarding />;
+}
 
 export default function App() {
-  // Test mode: no Supabase, no login — data stays in this browser.
-  if (isTestMode) return <Shell email="" />;
-  return <AuthGate />;
-}
-
-function AuthGate() {
-  const [session, setSession] = useState<Session | null | undefined>(undefined);
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => data.subscription.unsubscribe();
-  }, []);
-  if (session === undefined) return <div className="center-screen note">กำลังโหลด…</div>;
-  if (!session) return <Login />;
-  return <Shell email={session.user.email ?? ''} />;
-}
-
-function Shell({ email }: { email: string }) {
-  const [tab, setTab] = useState<Tab>(() => {
-    let saved: string | null = null;
-    try { saved = sessionStorage.getItem('tab'); } catch { /* storage unavailable */ }
-    // a remembered tab may no longer exist (e.g. after a tab was removed)
-    return TABS.some(([k]) => k === saved) ? (saved as Tab) : 'veh';
-  });
-  const [month, setMonth] = useState(today().slice(0, 7));
-  const [master, setMaster] = useState<Master | null>(null);
-  const [error, setError] = useState('');
-
-  const reload = useCallback(async () => {
-    try { setMaster(await loadMaster()); setError(''); }
-    catch (e) { setError(errMsg(e)); }
-  }, []);
-  useEffect(() => { reload(); }, [reload]);
-
-  const ctx = useMemo(() => (master ? buildMasterCtx(master, reload) : null), [master, reload]);
-
-  function go(t: Tab) {
-    setTab(t);
-    try { sessionStorage.setItem('tab', t); } catch { /* storage unavailable */ }
-  }
-
-  return (
-    <>
-      <header className="topbar">
-        <div className="wrap topbar-in">
-          <div>
-            <div className="eyebrow">Piyachart 54 · Daily Safety</div>
-            <h1>ตรวจรถก่อนออกงาน และ PPE</h1>
-          </div>
-          {isTestMode ? (
-            <div className="user">
-              <span className="test-badge" title="ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น ยังไม่ได้เชื่อม Supabase">โหมดทดสอบ</span>
-            </div>
-          ) : (
-            <div className="user">
-              <span className="user-email">{email}</span>
-              <button className="btn ghost-inv sm" onClick={() => supabase.auth.signOut()}>ออกจากระบบ</button>
-            </div>
-          )}
-        </div>
-      </header>
-      <nav className="tabs" role="tablist">
-        <div className="wrap tabs-in">
-          {TABS.map(([k, l]) => (
-            <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)}>{l}</button>
-          ))}
-        </div>
-      </nav>
-      <main className="wrap">
-        {error && (
-          <div className="panel error-panel">
-            <b>เชื่อมต่อฐานข้อมูลไม่สำเร็จ</b>
-            <div className="note">{error}</div>
-            <div className="note">ตรวจว่ารัน SQL ใน supabase/migrations แล้ว</div>
-            <button className="btn sm" onClick={reload}>ลองใหม่</button>
-          </div>
-        )}
-        {!ctx && !error && <div className="empty">กำลังโหลดข้อมูล…</div>}
-        {ctx && (
-          <MasterContext.Provider value={ctx}>
-            {tab === 'veh' && <VehiclePage />}
-            {tab === 'ppe' && <PpePage />}
-            {tab === 'dash' && <DashboardPage month={month} setMonth={setMonth} />}
-            {tab === 'data' && <DataPage month={month} setMonth={setMonth} />}
-            {tab === 'cfg' && <SettingsPage />}
-          </MasterContext.Provider>
-        )}
-      </main>
-    </>
-  );
+  // test mode: no login, data stays in this browser
+  if (isTestMode) return <StaffShell me={null} onboarding={false} />;
+  return <AuthGate area="staff">{(me, signOut) => <StaffArea me={me} signOut={signOut} />}</AuthGate>;
 }

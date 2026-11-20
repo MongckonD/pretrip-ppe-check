@@ -1,191 +1,290 @@
-import { useMemo, useState } from 'react';
+/**
+ * Admin "ภาพรวม" (/admin/overview): the chosen month at a glance (no comparison with other months).
+ *   KPIs · daily trend (pass / fail, % PPE ครบ) · items that fail most ·
+ *   vehicles to watch · PPE items missing most (+ who) · average work hours per vehicle.
+ * Details live in the other tabs (สถานะรถ, PPE, สรุป). Every box has its own CSV download (opens in Excel)
+ * with the RECORDS behind the numbers — plate, date, people (code + name), failed items, missing PPE — not only counts.
+ */
+import { useEffect, useMemo, useState } from 'react';
+import { BarChart, PctBarChart } from '../components/Charts';
 import { useMaster } from '../components/MasterContext';
-import { BarChart, LineChart, type Series } from '../components/Charts';
-import { Kpi } from '../components/Fields';
-import type { PpeInspection, VehicleInspection } from '../lib/types';
-import { daysInMonth, pad2 } from '../lib/utils';
-import { useMonthData } from './useMonthData';
+import { listPpeInspections, listTripActivities, listVehicleInspections } from '../lib/api';
+import type { PpeInspection, TripActivity, VehicleInspection } from '../lib/types';
+import { daysInMonth, downloadText, errMsg, toCsv, today } from '../lib/utils';
 
-function stat(pp: PpeInspection[], vv: VehicleInspection[], totalItems: number) {
+interface Month { veh: VehicleInspection[]; ppe: PpeInspection[]; trips: TripActivity[] }
+
+const prevMonth = (m: string) => { const d = new Date(`${m}-01T00:00`); d.setMonth(d.getMonth() - 1); return d.toLocaleDateString('sv-SE').slice(0, 7); };
+const nextMonth = (m: string) => { const d = new Date(`${m}-01T00:00`); d.setMonth(d.getMonth() + 1); return d.toLocaleDateString('sv-SE').slice(0, 7); };
+const hm = (min: number) => `${Math.floor(min / 60)}:${String(Math.round(min) % 60).padStart(2, '0')}`;
+const pct1 = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
+
+async function loadMonth(m: string): Promise<Month> {
+  const [veh, ppe, trips] = await Promise.all([listVehicleInspections({ month: m }), listPpeInspections({ month: m }), listTripActivities({ month: m })]);
+  return { veh, ppe, trips };
+}
+
+/** the headline numbers of one month */
+function stats(d: Month) {
+  const checks = d.veh.length;
+  const pass = d.veh.filter((r) => !r.fail_count).length;
+  const days = new Set(d.veh.map((r) => r.inspect_date)).size;
+  const ended = d.trips.filter((t) => t.work_ended_at);
+  const ppeOk = d.ppe.filter((p) => p.status === 'ครบ').length;
   return {
-    pc: pp.length,
-    ok: pp.filter((r) => r.status === 'ครบ').length,
-    miss: pp.reduce((s, r) => s + r.missing_count, 0),
-    vc: vv.length,
-    vp: vv.filter((r) => !r.fail_count).length,
-    vf: vv.filter((r) => r.fail_count > 0).length,
-    line: vv.filter((r) => r.photo_status === 1).length,
-    inc: vv.filter((r) => r.filled_count < totalItems).length,
+    passPct: pct1(pass, checks),
+    failCount: checks - pass,
+    ppePct: pct1(ppeOk, d.ppe.length),
+    vehPerDay: days ? Math.round((checks / days) * 10) / 10 : null,
+    avgMin: ended.length ? ended.reduce((s, t) => s + (t.work_minutes ?? 0), 0) / ended.length : null,
+    approvedPct: pct1(d.veh.filter((r) => r.approved_at).length, checks),
+    pending: d.veh.filter((r) => !r.approved_at && !r.rejected_at).length,
   };
 }
 
-const short = (s: string) => (s.length > 9 ? s.slice(0, 8) + '…' : s);
-
 export function DashboardPage({ month, setMonth }: { month: string; setMonth: (m: string) => void }) {
-  const { activeEmployees, checkItems } = useMaster();
-  const { veh: V, ppe: P, loading, error } = useMonthData(month);
-  const [q, setQ] = useState('');
-  const [person, setPerson] = useState('');
-  const totalItems = checkItems.filter((i) => i.active).length;
-  const itemName = (no: string) => checkItems.find((i) => String(i.item_no) === no)?.name ?? no;
+  const { checkItems, ppeItems, nameOf, codeOf } = useMaster();
+  const [cur, setCur] = useState<Month | null>(null);
+  const [error, setError] = useState('');
 
-  const vFail = V.filter((r) => r.fail_count > 0).length;
-  const pOk = P.filter((r) => r.status === 'ครบ').length;
-  const pct = P.length ? Math.round((pOk / P.length) * 100) : 0;
+  // only the chosen month is loaded (no previous month: half the D1 reads)
+  useEffect(() => {
+    let alive = true;
+    setCur(null); setError('');
+    loadMonth(month)
+      .then((a) => { if (alive) setCur(a); })
+      .catch((e) => { if (alive) setError(errMsg(e)); });
+    return () => { alive = false; };
+  }, [month]);
 
-  const topFails = useMemo(() => {
-    const m: Record<string, number> = {};
-    V.forEach((r) => Object.entries(r.results ?? {}).forEach(([k, v]) => { if (v === 2) m[k] = (m[k] ?? 0) + 1; }));
-    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [V]);
+  const s = useMemo(() => (cur ? stats(cur) : null), [cur]);
 
-  const team = activeEmployees.map((e) => ({
-    e, ...stat(P.filter((r) => r.employee_id === e.id), V.filter((r) => r.dman_id === e.id), totalItems),
-  }));
-  const ql = q.trim().toLowerCase();
-  const shownTeam = team.filter((t) => !ql || `${t.e.id} ${t.e.name} ${t.e.role}`.toLowerCase().includes(ql));
-
-  const pid = person || activeEmployees[0]?.id || '';
-  const pName = activeEmployees.find((e) => e.id === pid)?.name || pid;
-  const pp = P.filter((r) => r.employee_id === pid);
-  const vv = V.filter((r) => r.dman_id === pid);
-  const ps = stat(pp, vv, totalItems);
-
-  const days = daysInMonth(month);
-  const dl = days.map((d) => String(+d.slice(8)));
-  const perDay = days.map((d) => {
-    const a = pp.filter((r) => r.inspect_date === d), b = vv.filter((r) => r.inspect_date === d);
+  /* daily trend */
+  const trend = useMemo(() => {
+    if (!cur) return null;
+    const days = daysInMonth(month).filter((d) => d <= today());
     return {
-      d, ...stat(a, b, totalItems),
-      itemFails: b.reduce((s, r) => s + r.fail_count, 0),
-      failItems: b.flatMap((r) => Object.entries(r.results ?? {}).filter(([, v]) => v === 2).map(([k]) => itemName(k))),
+      labels: days.map((d) => String(Number(d.slice(8)))),
+      pass: days.map((d) => cur.veh.filter((r) => r.inspect_date === d && !r.fail_count).length),
+      fail: days.map((d) => cur.veh.filter((r) => r.inspect_date === d && r.fail_count).length),
+      ppe: days.map((d) => { const x = cur.ppe.filter((q) => q.inspect_date === d); return x.length ? pct1(x.filter((q) => q.status === 'ครบ').length, x.length) : null; }),
     };
-  });
+  }, [cur, month]);
 
-  const ppeSeries: Series[] = [
-    { name: 'PPE ตรวจ', color: 'var(--s1)', vals: perDay.map((x) => (x.pc ? x.pc : null)) },
-    { name: 'PPE ครบ', color: 'var(--s2)', vals: perDay.map((x) => (x.pc ? x.ok : null)) },
-    { name: 'PPE ไม่มี', color: 'var(--s3)', vals: perDay.map((x) => (x.pc ? x.miss : null)) },
-  ];
-  const mx = topFails[0]?.[1] ?? 1;
+  /* rankings */
+  const ranks = useMemo(() => {
+    if (!cur) return null;
+    const count = <T,>(list: T[], key: (x: T) => string[]) => {
+      const m = new Map<string, number>();
+      for (const x of list) for (const k of key(x)) m.set(k, (m.get(k) ?? 0) + 1);
+      return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    };
+    const itemName = new Map(checkItems.map((i) => [String(i.item_no), i.name]));
+    const ppeName = new Map(ppeItems.map((i) => [i.code, i.name]));
+    const failItems = count(cur.veh, (r) => Object.entries(r.results ?? {}).filter(([, v]) => v === 2).map(([k]) => k))
+      .map(([k, n]) => ({ label: itemName.get(k) ?? `ข้อ ${k}`, n }));
+    const failPlates = count(cur.veh.filter((r) => r.fail_count), (r) => [r.plate]).map(([k, n]) => ({ label: k, n }));
+    const ppeMissing = count(cur.ppe, (q) => Object.entries(q.results ?? {}).filter(([, v]) => v === 2).map(([k]) => k))
+      .map(([k, n]) => ({ label: ppeName.get(k) ?? k, n }));
+    const perPlate = new Map<string, { min: number; days: number }>();
+    for (const t of cur.trips) {
+      if (!t.work_ended_at) continue;
+      const x = perPlate.get(t.plate) ?? { min: 0, days: 0 };
+      x.min += t.work_minutes ?? 0; x.days++;
+      perPlate.set(t.plate, x);
+    }
+    const hours = [...perPlate.entries()].map(([k, x]) => ({ label: k, n: x.min / x.days, days: x.days })).sort((a, b) => b.n - a.n);
+    return { failItems, failPlates, ppeMissing, hours };
+  }, [cur, checkItems, ppeItems]);
+
+  /** CSV that opens in Excel: overview-2026-11-<name>.csv */
+  const dl = (name: string, rows: (string | number)[][]) => downloadText(`overview-${month}-${name}.csv`, toCsv(rows));
+
+  /* ---- the records behind each box (one row per check / person / failure) ---- */
+  const itemName = (k: string) => checkItems.find((i) => String(i.item_no) === k)?.name ?? `ข้อ ${k}`;
+  const ppeName = (k: string) => ppeItems.find((i) => i.code === k)?.name ?? k;
+  const person = (id?: string | null) => (id ? [codeOf(id), nameOf(id)] : ['', '']);
+  const failed = (r: VehicleInspection) => Object.entries(r.results ?? {}).filter(([, v]) => v === 2).map(([k]) => k);
+  const defectNote = (r: VehicleInspection, k: string) => r.defects?.[k]?.note ?? '';
+  const approval = (r: VehicleInspection) => (r.approved_at ? 'อนุมัติแล้ว' : r.rejected_at ? 'ไม่อนุมัติ' : 'รออนุมัติ');
+  const byDate = <T extends { inspect_date: string; plate: string }>(a: T, b: T) => a.inspect_date.localeCompare(b.inspect_date) || a.plate.localeCompare(b.plate);
+  const crewHead = ['รหัส D-Man', 'D-Man', 'รหัส Helper 1', 'Helper 1', 'รหัส Helper 2', 'Helper 2'];
+  const crew = (r: VehicleInspection) => [...person(r.dman_id), ...person(r.helper1_id), ...person(r.helper2_id)];
+
+  /** every vehicle check of the month */
+  const checksCsv = () => cur && dl('vehicle-checks', [
+    ['วันที่', 'เวลา', 'ทะเบียนรถ', 'ผลตรวจ', 'ข้อที่ไม่ผ่าน', 'หมายเหตุข้อบกพร่อง', ...crewHead, 'สถานะอนุมัติ', 'เหตุผลไม่อนุมัติ'],
+    ...[...cur.veh].sort(byDate).map((r) => {
+      const f = failed(r);
+      return [r.inspect_date, (r.inspect_time ?? '').slice(0, 5), r.plate, f.length ? 'ไม่ผ่าน' : 'ผ่าน',
+        f.map(itemName).join('; '), f.map((k) => defectNote(r, k)).filter(Boolean).join('; '),
+        ...crew(r), approval(r), r.reject_reason ?? ''];
+    }),
+  ]);
+  /** every PPE sheet of the month */
+  const ppeCsv = () => cur && dl('ppe-checks', [
+    ['วันที่', 'รหัสพนักงาน', 'ชื่อพนักงาน', 'ทะเบียนรถ', 'ผล', 'อุปกรณ์ที่ขาด', 'รหัสผู้ตรวจ', 'ผู้ตรวจ (D-Man)'],
+    ...[...cur.ppe].sort(byDate).map((q) => [q.inspect_date, ...person(q.employee_id), q.plate, q.status,
+      Object.entries(q.results ?? {}).filter(([, v]) => v === 2).map(([k]) => ppeName(k)).join('; '), ...person(q.inspector_id)]),
+  ]);
+  /** one row per failed item, most frequent item first */
+  const failItemsCsv = () => {
+    if (!cur || !ranks) return;
+    const order = new Map(ranks.failItems.map((x, i) => [x.label, i]));
+    const rows = cur.veh.flatMap((r) => failed(r).map((k) => ({ r, k, name: itemName(k) })))
+      .sort((a, b) => (order.get(a.name) ?? 99) - (order.get(b.name) ?? 99) || byDate(a.r, b.r));
+    dl('fail-items', [['ข้อตรวจ', 'วันที่', 'ทะเบียนรถ', 'หมายเหตุข้อบกพร่อง', ...crewHead, 'สถานะอนุมัติ'],
+      ...rows.map(({ r, k, name }) => [name, r.inspect_date, r.plate, defectNote(r, k), ...crew(r), approval(r)])]);
+  };
+  /** one row per missing PPE item per person, most often missing first */
+  const ppeMissingCsv = () => {
+    if (!cur || !ranks) return;
+    const order = new Map(ranks.ppeMissing.map((x, i) => [x.label, i]));
+    const rows = cur.ppe.flatMap((q) => Object.entries(q.results ?? {}).filter(([, v]) => v === 2).map(([k]) => ({ q, name: ppeName(k) })))
+      .sort((a, b) => (order.get(a.name) ?? 99) - (order.get(b.name) ?? 99) || byDate(a.q, b.q));
+    dl('ppe-missing', [['อุปกรณ์ที่ขาด', 'วันที่', 'รหัสพนักงาน', 'ชื่อพนักงาน', 'ทะเบียนรถ', 'รหัสผู้ตรวจ', 'ผู้ตรวจ (D-Man)'],
+      ...rows.map(({ q, name }) => [name, q.inspect_date, ...person(q.employee_id), q.plate, ...person(q.inspector_id)])]);
+  };
+  /** every failed check, the vehicle that fails most first */
+  const vehiclesCsv = () => {
+    if (!cur || !ranks) return;
+    const order = new Map(ranks.failPlates.map((x, i) => [x.label, i]));
+    const rows = cur.veh.filter((r) => r.fail_count).sort((a, b) => (order.get(a.plate) ?? 99) - (order.get(b.plate) ?? 99) || byDate(a, b));
+    dl('vehicles-to-watch', [['ทะเบียนรถ', 'ไม่ผ่านทั้งเดือน (ครั้ง)', 'วันที่', 'ข้อที่ไม่ผ่าน', 'หมายเหตุข้อบกพร่อง', ...crewHead, 'สถานะอนุมัติ'],
+      ...rows.map((r) => [r.plate, ranks.failPlates.find((x) => x.label === r.plate)?.n ?? '', r.inspect_date,
+        failed(r).map(itemName).join('; '), failed(r).map((k) => defectNote(r, k)).filter(Boolean).join('; '), ...crew(r), approval(r)])]);
+  };
+  /** every finished work day, with the crew from that day's vehicle check */
+  const hoursCsv = () => {
+    if (!cur) return;
+    const rows = cur.trips.filter((t) => t.work_ended_at)
+      .sort((a, b) => a.plate.localeCompare(b.plate) || a.activity_date.localeCompare(b.activity_date));
+    dl('work-hours', [['ทะเบียนรถ', 'วันที่', 'เริ่ม', 'จบ', 'เวลาทำงาน (ชม:นาที)', 'นาที', ...crewHead],
+      ...rows.map((t) => {
+        const c = cur.veh.find((r) => r.inspect_date === t.activity_date && r.plate === t.plate);
+        return [t.plate, t.activity_date, t.start_time, t.end_time ?? '', hm(t.work_minutes ?? 0), t.work_minutes ?? 0,
+          ...(c ? crew(c) : [...person(t.dman_id), '', '', '', ''])];
+      })]);
+  };
 
   return (
     <>
-      <section className="panel">
-        <div className="row spread head-row">
-          <h2>ภาพรวมประจำเดือน</h2>
-          <label className="month-pick">เดือน<input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></label>
-        </div>
-        {error && <div className="error">โหลดข้อมูลไม่สำเร็จ: {error}</div>}
-        <div className={`kpis${loading ? ' loading' : ''}`}>
-          <Kpi value={V.length} label="ครั้งที่ตรวจรถ" />
-          <Kpi value={vFail} label="ครั้งที่พบรถไม่ผ่าน" tone={vFail ? 'bad' : 'good'} />
-          <Kpi value={P.length} label="ครั้งที่ตรวจ PPE" />
-          <Kpi value={P.length ? `${pct}%` : '–'} label="PPE ครบ" tone={P.length && pct < 100 ? 'bad' : 'good'} />
-        </div>
-      </section>
-
-      <div className="two">
-        <section className="panel">
-          <div className="row spread head-row">
-            <h2>สรุปรายคน</h2>
-            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ รหัส หรือตำแหน่ง"
-              aria-label="ค้นหาพนักงาน" className="search" />
+      <section className="panel ov-head">
+        <div className="row spread">
+          <div><b>ภาพรวมประจำเดือน</b></div>
+          <div className="row">
+            <button type="button" className="btn ghost sm" onClick={() => setMonth(prevMonth(month))} aria-label="เดือนก่อน">‹</button>
+            <input type="month" aria-label="เดือน" value={month} max={today().slice(0, 7)} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+            <button type="button" className="btn ghost sm" disabled={month >= today().slice(0, 7)} onClick={() => setMonth(nextMonth(month))} aria-label="เดือนถัดไป">›</button>
           </div>
-          {V.length || P.length ? (
-            <>
-              <div className="tbl">
-                <table>
-                  <thead><tr>
-                    <th>พนักงาน</th><th className="num">PPE ตรวจ</th><th className="num">ครบ</th><th className="num">ไม่มี</th>
-                    <th className="num">รถตรวจ</th><th className="num">ไม่ผ่าน</th><th className="num">ภาพครบ</th><th className="num">ไม่ครบ</th>
-                  </tr></thead>
-                  <tbody>
-                    {shownTeam.map((t) => (
-                      <tr key={t.e.id} className={`pick${t.e.id === pid ? ' sel' : ''}`} onClick={() => setPerson(t.e.id)}>
-                        <td>{t.e.name || t.e.id}</td><td className="num">{t.pc}</td><td className="num">{t.ok}</td>
-                        <td className="num">{t.miss}</td><td className="num">{t.vc}</td><td className="num">{t.vf}</td>
-                        <td className="num">{t.line}</td><td className="num">{t.inc}</td>
-                      </tr>
-                    ))}
-                    {!shownTeam.length && <tr><td colSpan={8} className="note">ไม่พบพนักงานที่ตรงกับคำค้นหา</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-              <p className="note">เลือกแถวเพื่อดูรายวันของคนนั้น · "ไม่ครบ" = ตรวจรถไม่ถึง {totalItems} ข้อ</p>
-            </>
-          ) : <div className="empty">ยังไม่มีบันทึกในเดือน {month} เริ่มจากแท็บตรวจรถหรือ PPE แล้วตัวเลขจะขึ้นที่นี่</div>}
-        </section>
-
-        <section className="panel">
-          <h2>ข้อที่ไม่ผ่านบ่อย</h2>
-          {topFails.length ? topFails.map(([k, n]) => (
-            <div className="bar" key={k}>
-              <span>{pad2(k)} {itemName(k)}</span>
-              <span className="tr"><i style={{ width: `${(n / mx) * 100}%` }} /></span>
-              <b className="mono">{n}</b>
-            </div>
-          )) : <div className="empty">ยังไม่พบข้อที่ไม่ผ่านในเดือนนี้</div>}
-        </section>
-      </div>
-
-      <section className="panel">
-        <h2>PPE แยกพนักงาน</h2>
-        {P.length ? (
-          <BarChart labels={team.map((t) => short(t.e.name || t.e.id))} series={[
-            { name: 'PPE ตรวจ', color: 'var(--s1)', vals: team.map((t) => t.pc) },
-            { name: 'PPE ครบ', color: 'var(--s2)', vals: team.map((t) => t.ok) },
-            { name: 'PPE ไม่มี (รายการ)', color: 'var(--s3)', vals: team.map((t) => t.miss) },
-          ]} />
-        ) : <div className="empty">ยังไม่มีบันทึก PPE ในเดือน {month}</div>}
-      </section>
-
-      <section className="panel">
-        <h2>รายคน: {pName || '-'}</h2>
-        <div className="kpis k8">
-          <Kpi value={ps.pc} label="PPE ตรวจ" />
-          <Kpi value={ps.ok} label="PPE ครบ" tone={ps.pc && ps.ok === ps.pc ? 'good' : ''} />
-          <Kpi value={ps.miss} label="PPE ไม่มี (รายการ)" tone={ps.miss ? 'bad' : ''} />
-          <Kpi value={ps.vc} label="ตรวจรถ" />
-          <Kpi value={ps.vp} label="รถผ่าน" tone="good" />
-          <Kpi value={ps.vf} label="รถไม่ผ่าน" tone={ps.vf ? 'bad' : ''} />
-          <Kpi value={ps.line} label="ส่งภาพครบ" />
-          <Kpi value={ps.inc} label="รถตรวจไม่ครบ" tone={ps.inc ? 'bad' : ''} />
         </div>
+        {error && <div className="error">{error}</div>}
       </section>
 
-      {pp.length || vv.length ? (
-        <>
-          <div className="two">
-            <section className="panel"><h2>แนวโน้ม PPE รายวัน</h2><LineChart labels={dl} series={ppeSeries} /></section>
-            <section className="panel"><h2>รถไม่ผ่านรายวัน</h2>
-              <BarChart labels={dl} every={5} series={[{ name: 'รถไม่ผ่าน', color: 'var(--fail)', vals: perDay.map((x) => x.vf) }]} />
-            </section>
-          </div>
-          <section className="panel">
-            <h2>รายวัน: {pName}</h2>
-            <div className="tbl">
-              <table>
-                <thead><tr>
-                  <th>วันที่</th><th className="num">PPE ตรวจ</th><th className="num">PPE ครบ</th><th className="num">PPE ไม่มี</th>
-                  <th className="num">รถตรวจ</th><th className="num">รถไม่ผ่าน</th><th className="num">ข้อไม่ผ่าน</th>
-                  <th className="num">ภาพครบ</th><th>ข้อที่ไม่ผ่าน</th>
-                </tr></thead>
-                <tbody>
-                  {perDay.filter((x) => x.pc || x.vc).map((x) => (
-                    <tr key={x.d}>
-                      <td className="mono">{x.d.slice(8)}</td><td className="num">{x.pc}</td><td className="num">{x.ok}</td>
-                      <td className="num">{x.miss}</td><td className="num">{x.vc}</td><td className="num">{x.vf}</td>
-                      <td className="num">{x.itemFails}</td><td className="num">{x.line}</td>
-                      <td>{x.failItems.length ? x.failItems.join(', ') : <span className="note">–</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {!s && !error && <div className="empty">กำลังโหลด…</div>}
+      {s && (
+        <div className="ov-kpis-wrap">
+        <div className="row ov-dl-row">
+          <DlBtn onClick={() => dl('summary', [
+            ['หัวข้อ', 'ค่า'],
+            ['รถผ่านการตรวจ (%)', s.passPct ?? ''], ['ครั้งที่รถไม่ผ่าน', s.failCount], ['PPE ครบ (%)', s.ppePct ?? ''],
+            ['รถออกงานเฉลี่ย/วัน (คัน)', s.vehPerDay ?? ''], ['ชั่วโมงทำงานเฉลี่ย/วัน ต่อคัน (ชม:นาที)', s.avgMin === null ? '' : hm(s.avgMin)],
+            ['อนุมัติแล้ว (%)', s.approvedPct ?? ''], ['ค้างอนุมัติ (คัน)', s.pending],
+          ])} label="ตัวเลขสรุป" />
+          {cur && cur.veh.length > 0 && <DlBtn onClick={checksCsv} label="รายการตรวจรถทั้งเดือน" />}
+          {cur && cur.ppe.length > 0 && <DlBtn onClick={ppeCsv} label="รายการ PPE ทั้งเดือน" />}
+        </div>
+        <div className="ov-kpis">
+          <Kpi label="รถผ่านการตรวจ" value={s.passPct === null ? '–' : `${s.passPct}%`} />
+          <Kpi label="ครั้งที่รถไม่ผ่าน" value={String(s.failCount)} />
+          <Kpi label="PPE ครบ" value={s.ppePct === null ? '–' : `${s.ppePct}%`} />
+          <Kpi label="รถออกงานเฉลี่ย/วัน" value={s.vehPerDay === null ? '–' : `${s.vehPerDay} คัน`} />
+          <Kpi label="ชั่วโมงทำงานเฉลี่ย/วัน (ต่อคัน)" value={s.avgMin === null ? '–' : hm(s.avgMin)} />
+          <Kpi label="อนุมัติแล้ว" value={s.approvedPct === null ? '–' : `${s.approvedPct}%`} note={`ค้าง ${s.pending} คัน`} />
+        </div>
+        </div>
+      )}
+
+      {trend && cur && (
+        <div className="two ov-two">
+          <section className="panel"><PanelHead title="รถผ่าน / ไม่ผ่าน รายวัน" onDownload={cur.veh.length ? checksCsv : undefined} />
+            <BarChart labels={trend.labels} every={trend.labels.length > 16 ? 2 : 1} series={[
+              { name: 'ผ่าน', color: 'var(--pass)', vals: trend.pass },
+              { name: 'ไม่ผ่าน', color: 'var(--fail)', vals: trend.fail },
+            ]} />
           </section>
-        </>
-      ) : <section className="panel"><div className="empty">คนนี้ยังไม่มีบันทึกในเดือน {month}</div></section>}
+          <section className="panel"><PanelHead title="% PPE ครบ รายวัน" onDownload={cur.ppe.length ? ppeCsv : undefined} />
+            {/* PPE should be complete for everyone: green only at 100%; with ~6 people a day, one missing is ≈ 83% (amber) */}
+            <PctBarChart name="PPE ครบ" labels={trend.labels} vals={trend.ppe} good={100} warn={80} />
+          </section>
+        </div>
+      )}
+
+      {ranks && (
+        <div className="two ov-two">
+          <Rank title="ข้อที่ไม่ผ่านบ่อย" rows={ranks.failItems} show={5} color="var(--fail)" empty="เดือนนี้ไม่มีข้อที่ไม่ผ่าน"
+            onDownload={failItemsCsv} />
+          <Rank title="PPE ที่ขาดบ่อย" rows={ranks.ppeMissing} show={5} color="#6B46C1" empty="เดือนนี้ไม่มีใครขาด PPE"
+            onDownload={ppeMissingCsv} />
+        </div>
+      )}
+      {ranks && (
+        <div className="two ov-two">
+          <Rank title="รถที่ต้องดูแล" sub="ไม่ผ่านบ่อยสุด (ครั้ง)" rows={ranks.failPlates} show={5} color="#BA7517" empty="ไม่มีรถที่ไม่ผ่าน"
+            onDownload={vehiclesCsv} />
+          <Rank title="ชั่วโมงทำงานเฉลี่ย/วัน รายคัน" rows={ranks.hours.map((h) => ({ label: h.label, n: h.n, text: hm(h.n), sub: `${h.days} วัน` }))}
+            color="var(--pass)" empty="ยังไม่มีวันที่จบงาน"
+            onDownload={hoursCsv} />
+        </div>
+      )}
     </>
+  );
+}
+
+function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="ov-kpi">
+      <span>{label}</span>
+      <b>{value}</b>
+      {note && <em>{note}</em>}
+    </div>
+  );
+}
+
+/** small "⬇ CSV" button */
+function DlBtn({ onClick, label = 'CSV' }: { onClick: () => void; label?: string }) {
+  return <button type="button" className="btn ghost sm ov-dl" onClick={onClick} title="ดาวน์โหลดเป็นไฟล์ CSV (เปิดใน Excel ได้)">⬇ {label}</button>;
+}
+function PanelHead({ title, sub, onDownload }: { title: string; sub?: string; onDownload?: () => void }) {
+  return (
+    <div className="row spread ov-panel-head">
+      <h2 className="flush">{title}{sub && <span className="note"> · {sub}</span>}</h2>
+      {onDownload && <DlBtn onClick={onDownload} />}
+    </div>
+  );
+}
+
+/** ranking bars; `show` limits the bars on screen, the download has every row */
+function Rank({ title, sub, rows, color, empty, show, onDownload }: {
+  title: string; sub?: string; rows: { label: string; n: number; text?: string; sub?: string }[]; color: string; empty: string;
+  show?: number; onDownload?: () => void;
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.n));
+  return (
+    <section className="panel ov-rank">
+      <PanelHead title={title} sub={sub} onDownload={rows.length ? onDownload : undefined} />
+      {!rows.length ? <div className="empty">{empty}</div> : (
+        <ul>
+          {rows.slice(0, show ?? rows.length).map((r) => (
+            <li key={r.label}>
+              <span className="ov-label" title={r.label}>{r.label}</span>
+              <span className="ov-bar"><i style={{ width: `${(r.n / max) * 100}%`, background: color }} /></span>
+              <b className="mono">{r.text ?? r.n}</b>
+              {r.sub && <span className="note ov-sub">{r.sub}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

@@ -5,20 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:cf": "vite --mode cloudflare",
+    "dev:api": "wrangler dev --port 8787",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "db:migrate:local": "wrangler d1 migrations apply pretrip-ppe --local",
+    "db:migrate:remote": "wrangler d1 migrations apply pretrip-ppe --remote",
+    "cf-types": "wrangler types worker/worker-configuration.d.ts",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "wrangler": "^4.162.0"
   }
 }

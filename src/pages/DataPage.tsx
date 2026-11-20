@@ -13,7 +13,7 @@ function vehicleTable(V: VehicleInspection[], m: MasterCtx): Table {
     ...items.map((i) => `${pad2(i.item_no)} ${i.name}`),
     'จำนวนผ่าน', 'จำนวนไม่ผ่าน', 'จำนวนไม่เกี่ยวข้อง', 'จำนวนกรอก', 'ความครบถ้วน'];
   const rows = V.map((r) => [
-    r.inspect_date, r.month, r.dman_id, m.nameOf(r.dman_id),
+    r.inspect_date, r.month, m.codeOf(r.dman_id), m.nameOf(r.dman_id),
     r.helper1_id ? m.nameOf(r.helper1_id) : '', r.helper2_id ? m.nameOf(r.helper2_id) : '',
     r.plate, r.mileage ?? '', (r.inspect_time ?? '').slice(0, 5), PHOTO_STATUS[r.photo_status],
     r.overall_result ?? '', r.note,
@@ -28,7 +28,7 @@ function ppeTable(P: PpeInspection[], m: MasterCtx): Table {
   const head = ['วันที่', 'เดือน', 'รหัสพนักงาน', 'ชื่อพนักงาน', 'ตำแหน่ง', 'ทะเบียนรถ', 'ผู้ตรวจ D-Man',
     ...items.map((p) => p.name), 'จำนวนมี', 'จำนวนไม่มี', 'จำนวนกรอก', 'ผลตรวจ'];
   const rows = P.map((r) => [
-    r.inspect_date, r.month, r.employee_id, m.nameOf(r.employee_id),
+    r.inspect_date, r.month, m.codeOf(r.employee_id), m.nameOf(r.employee_id),
     m.employees.find((e) => e.id === r.employee_id)?.role ?? '', r.plate, m.nameOf(r.inspector_id),
     ...items.map((p) => r.results?.[p.code] ?? ''),
     r.have_count, r.missing_count, r.filled_count, r.status,

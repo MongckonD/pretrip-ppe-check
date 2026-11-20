@@ -1,0 +1,41 @@
+# Cloudflare config — Pre-Trip PPE Check
+# Worker ตัวเดียวเสิร์ฟทั้งหน้าเว็บ (dist/) และ API (/api/*)
+# deploy: npm run deploy
+name = "pretrip-ppe-check"
+main = "worker/index.ts"
+compatibility_date = "2026-11-01"
+
+# หน้าเว็บ React ที่ build แล้ว (/api/* ไปที่ Worker ก่อน ที่เหลือเสิร์ฟไฟล์ตรง)
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# ทุกคำขอผ่าน Worker ก่อน: Worker เลือกหน้าตามสิทธิ์ (admin → /admin/ เท่านั้น, user → / เท่านั้น)
+not_found_handling = "none"
+run_worker_first = true
+
+# Login: id_user + รหัสผ่าน จัดการโดยแอปเอง (worker/auth.ts) ไม่ใช้ Cloudflare Access
+# ผู้ใช้คนแรก (admin) สร้างจากหน้า "ตั้งค่าครั้งแรก" ตอนที่ยังไม่มีผู้ใช้ในระบบ
+
+# ล้างรูปที่อัปโหลดแล้วไม่ได้บันทึก (อายุเกิน 24 ชม.) ทุกวัน 03:00 เวลาไทย
+[triggers]
+crons = ["0 20 * * *"]
+
+[observability]
+enabled = true
+
+# ฐานข้อมูลหลัก: ข้อมูลตรวจรถ / PPE / master
+[[d1_databases]]
+binding = "DB"
+database_name = "pretrip-ppe"
+database_id = "5db08867-16a6-4a47-8438-f510790be1b6"   # region APAC
+migrations_dir = "cloudflare/migrations"
+
+# ที่เก็บรูปถ่าย 6 มุมโดยเฉพาะ (private bucket — D1 เก็บแค่ r2_key)
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "pretrip-inspection-photos"
+
+# ที่เก็บรูปใบขับขี่โดยเฉพาะ (private bucket แยกจากรูปตรวจรถ — D1 ตาราง driver_licenses เก็บแค่ photo_r2_key)
+[[r2_buckets]]
+binding = "LICENSES"
+bucket_name = "pretrip-driver-licenses"

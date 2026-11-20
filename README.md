@@ -1,88 +1,89 @@
 # Pre-Trip PPE Check · Piyachart 54
 
-ระบบตรวจรถก่อนออกงาน (23 ข้อ) + ตรวจ PPE พนักงาน (4 รายการ) + รูปถ่าย 6 มุม
+ระบบตรวจรถก่อนออกงาน (23 ข้อ) + ตรวจ PPE พนักงาน (4 รายการ) + รูปถ่ายรถ 5 มุม
 
 - **Frontend:** React 18 + Vite + TypeScript
-- **Backend:** Supabase (PostgreSQL + Auth + Storage)
+- **Backend:** Cloudflare — D1 (ฐานข้อมูล) + R2 (รูปถ่าย) + Worker API (login ด้วย id_user + รหัสผ่าน)
 - **ธีมสี:** Coca-Cola `#F40009` / `#1E1E1E`
 
-## ทดสอบหน้าบ้านอย่างเดียว (โหมดทดสอบ — ค่าเริ่มต้น)
+## สถานะตอนนี้
 
-ไม่ต้องมี Supabase / ไม่ต้องสร้าง `.env`
+| ส่วน | สถานะ |
+|---|---|
+| หน้าเว็บ | ✅ https://pretrip-ppe-check.pretrip-ppe-check.workers.dev — ใช้ข้อมูลจริง |
+| D1 `pretrip-ppe` | ✅ สร้างบน Cloudflare และรัน migration แล้ว |
+| R2 `pretrip-inspection-photos` | ✅ สร้างแล้ว (private) — รูปตรวจรถ |
+| R2 `pretrip-driver-licenses` | ✅ สร้างแล้ว (private) — รูปใบขับขี่โดยเฉพาะ |
+| Worker API (`worker/`) + `src/lib/api.cloudflare.ts` | ✅ deploy แล้ว |
+| Login | ✅ id_user + รหัสผ่าน · ไม่ได้ใช้งาน 30 นาที หรือปิดเบราว์เซอร์ = ออกจากระบบอัตโนมัติ (ทั้ง 2 role · `IDLE_MINUTES` ใน worker/auth.ts + src/lib/session.ts) · สิทธิ์ `admin` (ทุกอย่าง) / `user` (พนักงาน) · admin เพิ่มผู้ใช้ได้ที่แท็บตั้งค่า → ผู้ใช้งานระบบ |
+| ข้อมูลพนักงาน / รถ | ✅ import จากไฟล์จริงแล้ว (ประเภทรถยังว่าง) |
+
+## หน้าเว็บ (ฐานข้อมูลและ API ชุดเดียวกัน)
+
+| หน้า | ที่อยู่ | ใครใช้ | แท็บ |
+|---|---|---|---|
+| พนักงาน | `/` | เฉพาะ `user` (และหน้า login สำหรับคนที่ยังไม่เข้าระบบ) | ตรวจรถ `/vehicle` · PPE `/ppe` · Time activities `/time-activities` |
+| ผู้ดูแลระบบ | `/admin/` | เฉพาะ `admin` | หน้าหลัก `/admin/home` · ภาพรวม `/admin/overview` · ข้อมูล `/admin/data` · ใบขับขี่ `/admin/licenses` · ตั้งค่า `/admin/settings` |
+
+- หน้าพนักงานมีแท็บ **ใบขับขี่** `/license` ด้วย
+- ทุกแท็บมี path ของตัวเอง: แชร์ลิงก์ / refresh / ปุ่มย้อนกลับของเบราว์เซอร์ได้ · path ที่ไม่รู้จักจะเปิดแท็บแรกของหน้านั้น
+
+- **แต่ละ role เข้าได้หน้าเดียว** ไม่มีปุ่มสลับหน้า: login ที่ `/` แล้ว admin ไป `/admin/`, user อยู่ `/`
+- Worker เลือกหน้าให้ตาม session ทุกครั้ง (`run_worker_first = true`): admin เปิดหน้าอื่นถูกพากลับ `/admin/` ส่วน user / คนที่ยังไม่ login เปิด `/admin` (ทุกรูปแบบ เช่น `/ADMIN`, `/%61dmin`, `/admin/index.html`) ถูกพากลับ `/`
+- API แยกสิทธิ์เหมือนกัน: บันทึก/ลบ ตรวจรถ · PPE · Time activities · อัปโหลดรูป = `user` เท่านั้น · จัดการผู้ใช้ / ข้อมูลหลัก / อนุมัติ = `admin` เท่านั้น
+- โหมดทดสอบ (`npm run dev`) ไม่มี login จึงเปิดได้ทั้ง `/` และ `/admin/` (ใช้ในเครื่องเท่านั้น)
+- โค้ด: `src/App.tsx` (พนักงาน), `src/admin/` (ผู้ดูแล), `src/components/AppShell.tsx` + `AuthGate.tsx` ใช้ร่วมกัน · Vite build 2 หน้า (`index.html`, `admin/index.html`)
+
+ขั้นตอน deploy และรายละเอียด API อยู่ใน [`cloudflare/README.md`](cloudflare/README.md) หัวข้อ 5–6
+
+## รันหน้าเว็บ (โหมดทดสอบ)
+
 ```bash
 npm install
 npm run dev               # http://localhost:5173
 ```
-- ไม่มีหน้า login มุมขวาบนจะขึ้นป้าย **โหมดทดสอบ**
+- มุมขวาบนจะขึ้นป้าย **โหมดทดสอบ** และไม่มีหน้า login
 - ข้อมูลเก็บในเบราว์เซอร์ (localStorage + รูปใน IndexedDB) มีข้อมูลตัวอย่างของเดือนนี้ให้ดูกราฟได้ทันที
 - แท็บ **ตั้งค่า** มีปุ่ม "สร้างข้อมูลตัวอย่างใหม่" และ "ล้างบันทึกการตรวจทั้งหมด"
-- ตัวสลับอยู่ที่ `src/lib/api.ts`: ไม่มี `.env` → `api.mock.ts`, มี `.env` → `api.supabase.ts`
+- ชั้นข้อมูลอยู่ที่ `src/lib/api.ts`: `VITE_BACKEND=cloudflare` (ตั้งใน `.env.production`) → `api.cloudflare.ts`, อย่างอื่น → `api.mock.ts`
+- ทดสอบกับ API จริงในเครื่อง: `npm run dev:api` + `npm run dev:cf` (ดู cloudflare/README.md หัวข้อ 6)
 
-## เปิดใช้ backend จริง (ภายหลัง)
+## ความยินยอม + ใบขับขี่ (พนักงาน role `user`)
 
-### 1. สร้างโปรเจกต์ Supabase
-> ทางเลือก: รัน Supabase ในเครื่องด้วย Docker Desktop — `npx supabase init` แล้ว `npx supabase start`
-> ระบบจะรัน migration ในโฟลเดอร์ `supabase/migrations` ให้เอง และพิมพ์ URL / anon key ออกมา
-1. สร้างโปรเจกต์ที่ <https://supabase.com/dashboard>
-2. เปิด **SQL Editor** → รันไฟล์ใน `supabase/migrations/` **ตามลำดับชื่อไฟล์**:
-   `20261103000000_init.sql` (ตาราง) แล้ว `20261103010000_daily_views.sql` (view รายวัน)
-   (หรือใช้ Supabase CLI: `supabase link` แล้ว `supabase db push`)
-3. **Authentication → Users → Add user** สร้างบัญชีให้ทีม (อีเมล + รหัสผ่าน)
-4. **Project Settings → API** คัดลอก `Project URL` และ `anon public key`
+1. login แล้วต้องกด **ยอมรับความยินยอมในการใช้ข้อมูลส่วนบุคคล** ก่อน (ข้อความอยู่ที่ `src/lib/consent.ts`)
+   - Worker บล็อก API ทุกตัวของ user ที่ยังไม่ยอมรับ (ยกเว้น /api/me, เปลี่ยนรหัสผ่าน, /api/consent)
+   - แก้ข้อความเมื่อไร ให้เปลี่ยน `version` ใน `src/lib/consent.ts` และ `CONSENT_VERSION` ใน `worker/auth.ts` ให้ตรงกัน → ทุกคนต้องกดยอมรับใหม่
+2. **ถ่ายรูปใบขับขี่** (ใช้กล้องเท่านั้น ไม่มีเลือกรูปจากเครื่อง) · ตอนนี้มีปุ่ม **ข้ามไปหน้าหลัก** (แถบเตือนจะขึ้นจนกว่าจะส่ง) — จะบังคับถ่ายก่อนใช้งาน ให้ตั้ง `LICENSE_REQUIRED` (src/lib/license.ts) และ `REQUIRE_LICENSE` (worker/index.ts) เป็น true — อ่าน ชื่อ-นามสกุล / เลขที่ / วันหมดอายุ อัตโนมัติด้วย OCR (Tesseract.js ไทย+อังกฤษ ทำงานในเครื่องผู้ใช้) ให้ผู้ใช้ตรวจ/แก้ แล้วกด "บันทึกและไปหน้าหลัก"
+   - เมื่อเปิดบังคับ Worker จะบล็อก API ของ user ที่ยังไม่มีใบขับขี่ด้วย (ยกเว้น /api/me, เปลี่ยนรหัสผ่าน, ความยินยอม, ส่ง/ดูใบขับขี่ของตัวเอง)
+3. **แจ้งเตือน** บนทุกหน้าเมื่อยังไม่ส่ง / เหลือ ≤ 60 วัน / หมดอายุแล้ว · admin ดูใบขับขี่ที่พนักงานส่งแล้วได้ที่แท็บ **ใบขับขี่** `/admin/licenses` (เฉพาะที่ส่งแล้ว)
 
-### 2. ตั้งค่าและรัน frontend
+- ตาราง: `user_consents`, `driver_licenses` (migration 0006 · 0007 ลบ view/index ที่ไม่ได้ใช้) · รูปเก็บใน R2 bucket แยก `pretrip-driver-licenses` (binding `LICENSES`) key `licenses/<user>/<uuid>.jpg` — D1 เก็บแค่ key (ส่งใบใหม่ → ลบรูปเก่า)
+- ปรับจำนวนวันแจ้งเตือน: `LICENSE_WARN_DAYS` ใน `worker/license-routes.ts` และ `src/lib/license.ts`
+
+## ฐานข้อมูล (Cloudflare D1 + R2)
+
+รายละเอียดทั้งหมดอยู่ใน [`cloudflare/README.md`](cloudflare/README.md): ER diagram, พจนานุกรมข้อมูล, การจับคู่กับไฟล์ Excel,
+view สำหรับรายงาน, ตัวอย่างโค้ด Worker และข้อจำกัดของ D1
+
+- migration: `cloudflare/migrations/` (schema → views → seed)
+- config: `wrangler.toml` (binding `DB` = D1, `PHOTOS` = R2)
+
 ```bash
-cp .env.example .env      # แล้วใส่ค่า URL / anon key
-npm install
-npm run dev               # http://localhost:5173
+npx wrangler d1 migrations apply pretrip-ppe --local    # ทดสอบในเครื่อง
 ```
-Build สำหรับ deploy: `npm run build` → โฟลเดอร์ `dist/` (ใช้กับ Vercel / Netlify / Cloudflare Pages ได้)
-
-## โครงสร้างฐานข้อมูล
-
+```bash
+npx wrangler d1 migrations apply pretrip-ppe --remote   # ขึ้น Cloudflare จริง
 ```
-employees ─┬──< vehicle_inspections >──┬──< vehicle_inspection_results >── check_items
-           │   (1 คัน / 1 วัน)          └──< vehicle_inspection_photos  >── photo_slots
-           │                                         └─ storage: inspection-photos/
-           └──< ppe_inspections ──< ppe_inspection_results >── ppe_items
-               (1 คน / 1 วัน)
-vehicles  (ทะเบียนรถ master)
-```
-
-| ตาราง | หน้าที่ | คีย์สำคัญ |
-|---|---|---|
-| `employees` | พนักงาน (EMP01…) | `id` text, `active` ใช้แทนการลบ |
-| `vehicles` | ทะเบียนรถ + ประเภท | `plate` unique |
-| `check_items` | รายการตรวจรถ 23 ข้อ | `item_no` 1–23 |
-| `ppe_items` | รายการ PPE 4 อย่าง | `code` shoes/vest/gloves/mask |
-| `photo_slots` | ช่องรูป 6 ช่อง | `code` front/side/back/dash/cargo/ppe |
-| `vehicle_inspections` | หัวเอกสารตรวจรถ | unique (`inspect_date`, `plate`) |
-| `vehicle_inspection_results` | ผลรายข้อ | `result` 1=ผ่าน 2=ไม่ผ่าน 3=N/A |
-| `vehicle_inspection_photos` | path รูปใน Storage | pk (`inspection_id`, `slot`) |
-| `ppe_inspections` | หัวเอกสาร PPE | unique (`inspect_date`, `employee_id`) |
-| `ppe_inspection_results` | ผล PPE รายชิ้น | `result` 1=มี 2=ไม่มี |
-
-**Views สำหรับรายงาน** (แถวเดียวต่อการตรวจ เหมือนชีต Admin BI):
-`v_vehicle_inspection_summary`, `v_ppe_inspection_summary` — ใช้ต่อกับ Power BI / Looker Studio ได้ผ่าน Postgres connection
-
-**Views รายวัน** (อยู่ในฐานข้อมูลเท่านั้น ไม่ได้แสดงบนเว็บ ใช้สำหรับรายงาน / Power BI — รวมรถและคนที่ **ยังไม่ได้ตรวจ** ด้วย):
-| View | 1 แถว = | ใช้ดู |
-|---|---|---|
-| `v_daily_vehicle_status` | รถ 1 คัน / 1 วัน | สถานะ 0 ยังไม่ตรวจ · 1 ผ่าน · 2 ไม่ผ่าน, ข้อที่ไม่ผ่าน, สถานะรูป |
-| `v_daily_ppe_status` | พนักงาน 1 คน / 1 วัน | ยังไม่ตรวจ · ครบ · ไม่ครบ · อุปกรณ์ไม่ครบ, อุปกรณ์ที่ขาด |
-| `v_daily_summary` | 1 วัน | จำนวนรถตรวจแล้ว/ทั้งหมด, ไม่ผ่าน, รูปครบ, PPE ตรวจแล้ว/ครบ |
-
-"ที่ต้องตรวจ" = รถ/พนักงานที่ active + รายการที่มีบันทึกจริงในวันนั้น · ช่วงวัน = วันแรกที่มีบันทึก ถึงวันนี้
-
-**Functions:** `save_vehicle_inspection(...)`, `save_ppe_inspections(...)` บันทึกหัว + รายละเอียดใน transaction เดียว
-
-**ความปลอดภัย:** เปิด RLS ทุกตาราง — อ่าน/เขียนได้เฉพาะผู้ใช้ที่ login แล้ว, bucket รูปเป็น private ใช้ signed URL
 
 ## โครงสร้างโค้ด
 ```
+worker/       Cloudflare Worker API (index, auth, routes, validate)
 src/
-  lib/        supabase client, api (query/RPC/storage), types, utils
-  components/ Toast, MasterContext, Fields (Seg, selects), Charts (SVG), Login
+  lib/        api (ตัวสลับ), api.cloudflare (API จริง), api.mock (โหมดทดสอบ), types, utils, seed, image
+  components/ Toast, MasterContext, Fields (Seg, selects), Charts (SVG)
   pages/      VehiclePage, PpePage, DashboardPage, DataPage, SettingsPage
-supabase/migrations/  SQL schema + seed
+cloudflare/
+  migrations/ SQL schema + views + seed สำหรับ D1
+  README.md   เอกสารออกแบบฐานข้อมูล
+wrangler.toml
 ```
