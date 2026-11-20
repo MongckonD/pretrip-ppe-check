@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ComboText, useSignedUrls } from '../components/Fields';
-import { ImageIcon } from '../components/Icons';
+import { AlertIcon, BadgeCheckIcon, CheckCircleIcon, HourglassIcon, ImageIcon, ListIcon, XCircleIcon } from '../components/Icons';
 import { Lightbox, type LightboxPhoto } from '../components/Lightbox';
 import { useMaster } from '../components/MasterContext';
 import { useToast } from '../components/Toast';
@@ -126,7 +126,7 @@ export function VehicleStatusPage() {
   const quick = (from: string, to: string) => search({ ...draft, from, to });
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setDraft((f) => ({ ...f, [k]: v }));
   const plateOpts = useMemo(() => [...vehicles].sort((a, b) => a.plate.localeCompare(b.plate, 'th')).map((v) => ({ value: v.plate })), [vehicles]);
-  const peopleOpts = useMemo(() => employees.filter((e) => e.name).map((e) => ({ value: e.name, label: `${e.name} (${e.id})` })), [employees]);
+  const peopleOpts = useMemo(() => employees.filter((e) => e.name).map((e) => ({ value: e.name, label: e.code ? `${e.name} (${e.code})` : e.name })), [employees]);
 
   async function run(id: string, fn: () => Promise<void>, ok: string) {
     setBusy(id);
@@ -212,12 +212,12 @@ export function VehicleStatusPage() {
       {checks && (
         <div className="rp-cards">
           {[
-            { icon: '☰', label: 'ผลตรวจทั้งหมด', value: filtered.filter((r) => r.check).length, tone: 'all' },
-            { icon: '✓', label: 'ผ่าน', value: filtered.filter((r) => r.check && !r.fail).length, tone: 'pass' },
-            { icon: '!', label: 'ไม่ผ่าน', value: filtered.filter((r) => r.check && r.fail).length, tone: 'fail' },
-            { icon: '⏳', label: 'รออนุมัติ', value: count('wait'), tone: 'wait' },
-            { icon: '✕', label: 'ไม่อนุมัติ', value: count('bad'), tone: 'fail' },
-            { icon: '✔', label: 'อนุมัติแล้ว', value: count('ok'), tone: 'pass' },
+            { icon: <ListIcon />, label: 'ผลตรวจทั้งหมด', value: filtered.filter((r) => r.check).length, tone: 'all' },
+            { icon: <CheckCircleIcon />, label: 'ผ่าน', value: filtered.filter((r) => r.check && !r.fail).length, tone: 'pass' },
+            { icon: <AlertIcon />, label: 'ไม่ผ่าน', value: filtered.filter((r) => r.check && r.fail).length, tone: 'fail' },
+            { icon: <HourglassIcon />, label: 'รออนุมัติ', value: count('wait'), tone: 'wait' },
+            { icon: <XCircleIcon />, label: 'ไม่อนุมัติ', value: count('bad'), tone: 'fail' },
+            { icon: <BadgeCheckIcon />, label: 'อนุมัติแล้ว', value: count('ok'), tone: 'pass' },
           ].map((c) => (
             <div key={c.label} className={`rp-card ${c.tone}`}>
               <span className="rp-ico" aria-hidden="true">{c.icon}</span>
@@ -299,7 +299,7 @@ function DetailDialog({ c, ppe, busy, onClose, onApprove, onReject, onUnreject }
   c: VehicleInspection; ppe: PpeInspection[]; busy: boolean; onClose: () => void;
   onApprove: () => void; onReject: (reason: string) => Promise<boolean>; onUnreject: () => void;
 }) {
-  const { checkItems, photoSlots, nameOf } = useMaster();
+  const { checkItems, photoSlots, nameOf, codeOf } = useMaster();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
   const [viewer, setViewer] = useState<number | null>(null);
@@ -342,7 +342,7 @@ function DetailDialog({ c, ppe, busy, onClose, onApprove, onReject, onUnreject }
               {c.fail_count ? <span className="pill f">● ไม่ผ่าน {c.fail_count} ข้อ</span> : <span className="pill p">● ผ่าน</span>}
               <span className={`pill ${STATUS[status].cls}`}>● {STATUS[status].text}</span>
             </span></div>
-          <div><span className="ro-label">ผู้ตรวจ (D-Man)</span><b>{nameOf(c.dman_id)} <span className="note">({c.dman_id})</span></b></div>
+          <div><span className="ro-label">ผู้ตรวจ (D-Man)</span><b>{nameOf(c.dman_id)}{codeOf(c.dman_id) && <span className="note mono"> ({codeOf(c.dman_id)})</span>}</b></div>
           <div><span className="ro-label">ทะเบียนรถ</span><b>{c.plate}</b></div>
           <div><span className="ro-label">วันที่ตรวจ</span><b className="mono">{mdy(c.inspect_date)} {(c.inspect_time ?? '').slice(0, 5)}</b></div>
           <div><span className="ro-label">เลขไมล์</span><b className="mono">{c.mileage == null ? '–' : c.mileage.toLocaleString('th-TH')}</b></div>

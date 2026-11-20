@@ -32,6 +32,8 @@ interface TripRow {
 interface Db { employees: Employee[]; vehicles: Vehicle[]; veh: VehRow[]; ppe: PpeRow[]; trips: TripRow[] }
 
 const KEY = 'pretrip-mock-v3';
+/** test employee code from the internal id: EMP07 → 690007 (test mode only; the real codes are typed in Settings) */
+const testCode = (id: string) => `69${String(Number(id.replace(/\D/g, '')) || 0).padStart(4, '0')}`;
 let mem: Db | null = null;
 
 function load(): Db {
@@ -41,6 +43,8 @@ function load(): Db {
     if (raw) {
       mem = JSON.parse(raw) as Db;
       mem.trips ??= []; // saved by a version before Time activities
+      // saved before employee codes: give each a test code (EMP07 → 690007) so nothing shows the internal id
+      for (const e of mem.employees) e.code ||= testCode(e.id);
       return mem;
     }
     // drop data saved by older demo versions
@@ -62,7 +66,7 @@ function demoData(): Db {
     ['สมชาย ใจดี', 'D-Man'], ['วิชัย แสงทอง', 'D-Man'], ['ประสิทธิ์ มั่นคง', 'Helper'],
     ['อนุชา ศรีสุข', 'Helper'], ['สุริยา บุญมา', 'Helper'], ['ธนพล รุ่งเรือง', 'D-Man'],
   ];
-  const employees = names.map(([name, role], i) => ({ id: `EMP${pad2(i + 1)}`, name, role, active: true }));
+  const employees = names.map(([name, role], i) => ({ id: `EMP${pad2(i + 1)}`, name, role, active: true, code: testCode(`EMP${pad2(i + 1)}`) }));
   const vehicles = [['1กก 1234', '6 ล้อ'], ['2ขข 5678', '4 ล้อ'], ['3คค 9012', '6 ล้อ']]
     .map(([plate, type]) => ({ id: uuid(), plate, type, active: true }));
 
@@ -170,6 +174,11 @@ export async function loadMaster(): Promise<Master> {
 
 export async function upsertEmployee(e: Employee) {
   const db = load();
+  const code = (e.code ?? '').toUpperCase().replace(/\s+/g, '');
+  if (code && !/^[A-Z0-9-]{1,20}$/.test(code)) throw new Error('รหัสพนักงานใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข และ - (ไม่เกิน 20 ตัว)');
+  const owner = code && db.employees.find((x) => x.id !== e.id && (x.code ?? '') === code);
+  if (owner) throw new Error(`รหัสพนักงาน ${code} ใช้กับ ${owner.id} แล้ว`);
+  e = { ...e, code };
   const i = db.employees.findIndex((x) => x.id === e.id);
   if (i >= 0) db.employees[i] = { ...e }; else db.employees.push({ ...e });
   persist();
@@ -186,6 +195,16 @@ export async function upsertVehicle(v: Partial<Vehicle> & { plate: string }) {
 export async function deleteVehicle(id: string) {
   const db = load();
   db.vehicles = db.vehicles.filter((v) => v.id !== id);
+  persist();
+}
+/** same rule as the Worker: only an employee with no history can be deleted */
+export async function deleteEmployee(id: string) {
+  const db = load();
+  const used = db.veh.some((r) => [r.dman_id, r.helper1_id, r.helper2_id].includes(id))
+    || db.ppe.some((r) => r.employee_id === id || r.inspector_id === id)
+    || db.trips.some((r) => r.dman_id === id);
+  if (used) throw new Error('ลบไม่ได้ — มีประวัติการตรวจรถ / PPE / เวลาทำงานแล้ว ให้ปิดสถานะเป็น "ปิดอยู่" แทน');
+  db.employees = db.employees.filter((e) => e.id !== id);
   persist();
 }
 

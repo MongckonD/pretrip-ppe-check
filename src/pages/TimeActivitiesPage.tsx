@@ -1,9 +1,10 @@
 /**
- * Time activities = the work clock of today's vehicle team, three boxes:
- *   1. vehicle / D-Man (from today's vehicle check) and "เริ่มการทำงาน" — the press is the start time
- *   2. ร้านค้า: store-visit timer (Time & Motion, A/B/C/D activities) — separate from the work clock;
- *      trial version: data stays in this browser per account until the database design is agreed (components/StoreVisits.tsx)
- *   3. end of the day: live timer and "จบงาน / หยุดเวลาทำงาน"
+ * Time activities, two sub-tabs in the menu (/time-activities/work · /time-activities/store):
+ *   บันทึกเวลาการทำงาน — the work clock of today's vehicle team:
+ *     1. vehicle / D-Man (from today's vehicle check) and "เริ่มการทำงาน" — the press is the start time
+ *     2. end of the day: live timer and "จบงาน / หยุดเวลาทำงาน"
+ *   บันทึกเวลาส่งสินค้า — store-visit timer (Time & Motion, A/B/C/D activities), separate from the work clock;
+ *     trial version: data stays in this browser per account until the database design is agreed (components/StoreVisits.tsx)
  * Start and end are stamped by the server (trip_activities.work_started_at / work_ended_at), one record per vehicle per day.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -32,7 +33,7 @@ function useTick(on: boolean) {
   }, [on]);
 }
 
-export function TimeActivitiesPage({ goVehicle }: { goVehicle?: () => void }) {
+export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; goVehicle?: () => void }) {
   const { nameOf } = useMaster();
   const toast = useToast();
 
@@ -48,7 +49,8 @@ export function TimeActivitiesPage({ goVehicle }: { goVehicle?: () => void }) {
     try { setRecords(await listTripActivities({ date: day })); }
     catch (e) { toast('โหลดข้อมูลไม่สำเร็จ: ' + errMsg(e)); }
   }, [day, toast]);
-  useEffect(() => { reload(); }, [reload]);
+  // the store tab does not use the work record: skip the read there (saves D1 rows)
+  useEffect(() => { if (sub === 'work') reload(); }, [reload, sub]);
 
   // today's work record of the selected vehicle (exists once "เริ่มการทำงาน" was pressed)
   const trip = check ? records.find((r) => r.plate === check.plate) : undefined;
@@ -77,6 +79,13 @@ export function TimeActivitiesPage({ goVehicle }: { goVehicle?: () => void }) {
 
   return (
     <>
+      {sub === 'store' ? (
+        <section className="panel">
+          <h2>ร้านค้า · จับเวลาส่งสินค้า</h2>
+          <CheckPicker checks={checks} selId={selId} onPick={setSelId} />
+          {check && <StoreVisits plate={check.plate} />}
+        </section>
+      ) : (<>
       {/* box 1: vehicle + D-Man, and the start of work */}
       <section className="panel">
         <h2>บันทึกก่อนออกงาน</h2>
@@ -99,13 +108,7 @@ export function TimeActivitiesPage({ goVehicle }: { goVehicle?: () => void }) {
         )}
       </section>
 
-      {/* box 2: store-visit timer (separate from the work clock) */}
-      <section className="panel">
-        <h2>ร้านค้า · จับเวลาส่งสินค้า</h2>
-        {check && <StoreVisits plate={check.plate} />}
-      </section>
-
-      {/* box 3: end of the day — stop the work clock */}
+      {/* box 2: end of the day — stop the work clock */}
       <section className="panel">
         <h2>บันทึกตอนจบงาน</h2>
         {!trip ? (
@@ -130,6 +133,7 @@ export function TimeActivitiesPage({ goVehicle }: { goVehicle?: () => void }) {
           </div>
         )}
       </section>
+      </>)}
     </>
   );
 }

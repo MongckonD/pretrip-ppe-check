@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { useMaster } from './MasterContext';
+import { employeeLabel, useMaster } from './MasterContext';
 import { signedUrls } from '../lib/api';
 
 /**
@@ -20,9 +20,10 @@ export function EmployeeSelect(props: {
   const listId = `${props.id ?? autoId}-list`;
   const taken = new Set((props.exclude ?? []).filter((x) => x && x !== props.value));
   const choices = activeEmployees.filter((e) => !taken.has(e.id));
+  // shown as "650123 · name" (company code), never the internal id
   const labelOf = (id: string) => {
     const e = activeEmployees.find((x) => x.id === id);
-    return e ? (e.name ? `${e.id} · ${e.name}` : e.id) : id;
+    return e ? employeeLabel(e) : '';
   };
 
   const [open, setOpen] = useState(false);
@@ -44,11 +45,11 @@ export function EmployeeSelect(props: {
   };
 
   const q = typing ? text.trim().toLowerCase() : '';
-  const matches = q ? choices.filter((e) => e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q)) : choices;
+  const matches = q ? choices.filter((e) => (e.code ?? '').toLowerCase().includes(q) || e.name.toLowerCase().includes(q)) : choices;
   // first row clears the field ("ไม่มี" / "เลือกผู้ตรวจ"), then the matching employees
   const rows: { id: string; label: string }[] = [
     ...(q ? [] : [{ id: '', label: props.blank }]),
-    ...matches.map((e) => ({ id: e.id, label: e.name ? `${e.id} · ${e.name}` : e.id })),
+    ...matches.map((e) => ({ id: e.id, label: employeeLabel(e) })),
   ];
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export function EmployeeSelect(props: {
       const t = text.trim().toLowerCase();
       if (!t) props.onChange('');
       else {
-        const exact = choices.find((e) => e.id.toLowerCase() === t || e.name.toLowerCase() === t);
+        const exact = choices.find((e) => (e.code ?? '').toLowerCase() === t || e.name.toLowerCase() === t);
         const only = matches.length === 1 ? matches[0] : undefined;
         const hit = exact ?? only;
         if (hit) props.onChange(hit.id);

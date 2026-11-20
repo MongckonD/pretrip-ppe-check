@@ -39,7 +39,7 @@ function PasswordInput(props: { label: string; value: string; onChange: (v: stri
   );
 }
 
-const PW_RULE = 'อย่างน้อย 8 ตัวอักษร และต้องไม่มีชื่อผู้ใช้อยู่ในรหัสผ่าน';
+const PW_RULE = 'อย่างน้อย 8 ตัวอักษร และต้องไม่มีรหัสพนักงานอยู่ในรหัสผ่าน';
 
 export function LoginForm({ onDone, notice }: { onDone: (me: Me) => void; notice?: string }) {
   const [username, setUsername] = useState('');
@@ -59,9 +59,9 @@ export function LoginForm({ onDone, notice }: { onDone: (me: Me) => void; notice
     <Card title="เข้าสู่ระบบ">
       <form className="login-form" onSubmit={submit}>
         {notice && <div className="login-notice" role="status">{notice}</div>}
-        <label>ชื่อผู้ใช้ (id_user)
+        <label>รหัสพนักงาน
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
-            autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus required />
+            placeholder="เช่น 650123" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoFocus required />
         </label>
         <PasswordInput label="รหัสผ่าน" value={password} onChange={setPassword} autoComplete="current-password" />
         {error && <div className="form-error" role="alert">{error}</div>}
@@ -92,13 +92,13 @@ export function SetupForm({ onDone }: { onDone: (me: Me) => void }) {
   return (
     <Card title="ตั้งค่าครั้งแรก" sub="ยังไม่มีผู้ใช้ในระบบ สร้างบัญชีผู้ดูแลระบบ (admin) คนแรก แล้วค่อยเพิ่มพนักงานคนอื่นได้ที่แท็บตั้งค่า">
       <form className="login-form" onSubmit={submit}>
-        <label>ชื่อผู้ใช้ (id_user)
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
-            autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="เช่น admin หรือ somchai" autoFocus required />
-          <span className="note">ภาษาอังกฤษพิมพ์เล็ก ตัวเลข หรือ . _ - ยาว 3–32 ตัว</span>
+        <label>รหัสพนักงาน
+          <input value={username} onChange={(e) => setUsername(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))} autoComplete="username"
+            autoCapitalize="characters" autoCorrect="off" spellCheck={false} placeholder="เช่น 650123" maxLength={20} autoFocus required />
+          <span className="note">ใช้เข้าสู่ระบบ · ตัวอักษรภาษาอังกฤษ ตัวเลข หรือ - ไม่เกิน 20 ตัว</span>
         </label>
-        <label>ชื่อที่แสดง
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น สมชาย ใจดี" />
+        <label>ชื่อ-นามสกุล
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น สมชาย ใจดี" required />
         </label>
         <PasswordInput label="รหัสผ่าน" value={password} onChange={setPassword} autoComplete="new-password" />
         <PasswordInput label="ยืนยันรหัสผ่าน" value={confirm} onChange={setConfirm} autoComplete="new-password" />

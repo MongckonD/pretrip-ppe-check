@@ -53,7 +53,7 @@ export async function assertEmployeesExist(env: Env, ids: string[]) {
   ).bind(JSON.stringify(uniq)).all<{ id: string }>();
   const found = new Set(results.map((r) => r.id));
   const missing = uniq.filter((id) => !found.has(id));
-  if (missing.length) throw bad(`ไม่พบรหัสพนักงาน ${missing.join(', ')}`);
+  if (missing.length) throw bad(`ไม่พบพนักงานที่เลือก ${missing.length} คนในระบบ — โหลดหน้าใหม่แล้วเลือกอีกครั้ง`);
 }
 
 export function dateFilter(url: URL): { sql: string; args: string[] } {
@@ -86,7 +86,7 @@ export function dateFilter(url: URL): { sql: string; args: string[] } {
 
 export async function getMaster({ env }: Ctx) {
   const [emps, vehs, items, ppe, slots, roles, areas] = await env.DB.batch([
-    env.DB.prepare(`SELECT id, name, coalesce(role, '') AS role, active FROM employees ORDER BY id`),
+    env.DB.prepare(`SELECT id, name, coalesce(role, '') AS role, active, coalesce(emp_code, '') AS code FROM employees ORDER BY id`),
     env.DB.prepare(`SELECT id, plate, type, active FROM vehicles ORDER BY plate`),
     env.DB.prepare(`SELECT item_no, name, hint, active FROM check_items ORDER BY item_no`),
     env.DB.prepare(`SELECT code, name, sort_order, active FROM ppe_items ORDER BY sort_order, code`),
@@ -107,6 +107,17 @@ export async function getMaster({ env }: Ctx) {
   });
 }
 
+/**
+ * How an employee is named in messages: name and company code — never the internal id (EMP01).
+ * Shared with auth-routes.ts.
+ */
+export async function empLabel(env: Env, id: string): Promise<string> {
+  const e = await env.DB.prepare(`SELECT name, emp_code FROM employees WHERE id = ?1`).bind(id).first<{ name: string; emp_code: string | null }>();
+  if (!e) return 'พนักงานคนนี้';
+  if (e.name && e.emp_code) return `${e.name} (${e.emp_code})`;
+  return e.name || (e.emp_code ? `รหัสพนักงาน ${e.emp_code}` : 'พนักงานคนนี้ (ยังไม่มีชื่อและรหัส)');
+}
+
 export async function putEmployee({ env, actor, req, params }: Ctx) {
   requireRole(actor, 'admin');
   const id = employeeId(decodeURIComponent(params[0]));
@@ -114,6 +125,18 @@ export async function putEmployee({ env, actor, req, params }: Ctx) {
   const name = str(body.name, 'ชื่อ', 100);
   const roleIn = str(body.role, 'ตำแหน่ง', 30);
   const active = body.active === undefined ? true : bool(body.active, 'สถานะใช้งาน');
+  // company employee code (will become the login name later). Not sent = keep as is · '' = clear.
+  const codeSent = body.code !== undefined && body.code !== null;
+  const code = codeSent ? str(body.code, 'รหัสพนักงาน', 20).toUpperCase().replace(/\s+/g, '') : '';
+  if (code && !/^[A-Z0-9-]{1,20}$/.test(code)) throw bad('รหัสพนักงานใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข และ - (ไม่เกิน 20 ตัว)');
+  if (code) {
+    const owner = await env.DB.prepare(`SELECT id FROM employees WHERE emp_code = ?1 AND id <> ?2`).bind(code, id).first<{ id: string }>();
+    if (owner) throw conflict(`รหัสพนักงาน ${code} ใช้กับ ${await empLabel(env, owner.id)} แล้ว`);
+  } else if (codeSent) {
+    // the code is the sign-in name: an employee with an account must keep one (it can be changed, not removed)
+    const acc = await env.DB.prepare(`SELECT id FROM users WHERE employee_id = ?1`).bind(id).first<{ id: string }>();
+    if (acc) throw conflict(`ลบรหัสพนักงานของ ${await empLabel(env, id)} ไม่ได้ — พนักงานคนนี้มีบัญชีและใช้รหัสนี้เข้าสู่ระบบ (เปลี่ยนเป็นรหัสใหม่ได้)`);
+  }
 
   let role: string | null = null;
   if (roleIn) {
@@ -132,13 +155,15 @@ export async function putEmployee({ env, actor, req, params }: Ctx) {
         `UPDATE employees SET name = ?2, role = ?3, active = ?4,
            active_to = CASE WHEN ?4 = 1 THEN NULL
                             WHEN active = 1 THEN ?5
-                            ELSE active_to END
+                            ELSE active_to END,
+           emp_code = CASE WHEN ?6 = 1 THEN nullif(?7, '') ELSE emp_code END
          WHERE id = ?1`,
-      ).bind(id, name, role, active ? 1 : 0, today)
+      ).bind(id, name, role, active ? 1 : 0, today, codeSent ? 1 : 0, code)
     : env.DB.prepare(
-        `INSERT INTO employees (id, name, role, active, active_from, active_to) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(id, name, role, active ? 1 : 0, today, active ? null : today);
-  await env.DB.batch([stmt, audit(env, actor, existing ? 'update' : 'create', 'employees', id, { name, role, active })]);
+        `INSERT INTO employees (id, name, role, active, active_from, active_to, emp_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6, nullif(?7, ''))`,
+      ).bind(id, name, role, active ? 1 : 0, today, active ? null : today, code);
+  await env.DB.batch([stmt, audit(env, actor, existing ? 'update' : 'create', 'employees', id,
+    codeSent ? { name, role, active, code: code || null } : { name, role, active })]);
   return json({ ok: true });
 }
 
@@ -185,6 +210,32 @@ export async function putVehicle({ env, actor, req }: Ctx) {
     audit(env, actor, 'create', 'vehicles', newId, { plate: p, type }),
   ]);
   return json({ id: newId }, 201);
+}
+
+/**
+ * Delete an employee row — only one with no history at all (e.g. a row added by mistake).
+ * Anyone on a vehicle check, PPE sheet or work record, or with a sign-in account, is kept:
+ * switch them to "ปิดอยู่" instead (the database's ON DELETE RESTRICT would refuse anyway).
+ */
+export async function deleteEmployee({ env, actor, params }: Ctx) {
+  requireRole(actor, 'admin');
+  const id = employeeId(decodeURIComponent(params[0]));
+  const e = await env.DB.prepare(`SELECT name, emp_code FROM employees WHERE id = ?1`).bind(id).first<{ name: string; emp_code: string | null }>();
+  if (!e) throw notFound('ไม่พบพนักงานคนนี้ (อาจถูกลบไปแล้ว)');
+  const r = await env.DB.prepare(
+    `SELECT EXISTS (SELECT 1 FROM users WHERE employee_id = ?1) AS account,
+            EXISTS (SELECT 1 FROM vehicle_inspections WHERE dman_id = ?1 OR helper1_id = ?1 OR helper2_id = ?1)
+         OR EXISTS (SELECT 1 FROM ppe_inspections WHERE employee_id = ?1 OR inspector_id = ?1)
+         OR EXISTS (SELECT 1 FROM trip_activities WHERE dman_id = ?1) AS history`,
+  ).bind(id).first<{ account: number; history: number }>();
+  const who = e.name || e.emp_code || 'พนักงานคนนี้';
+  if (r?.account) throw conflict(`ลบ ${who} ไม่ได้ — มีบัญชีเข้าสู่ระบบผูกอยู่ ลบบัญชีในกล่องผู้ใช้งานระบบก่อน หรือปิดสถานะเป็น "ปิดอยู่" แทน`);
+  if (r?.history) throw conflict(`ลบ ${who} ไม่ได้ — มีประวัติการตรวจรถ / PPE / เวลาทำงานแล้ว ให้ปิดสถานะเป็น "ปิดอยู่" แทน`);
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM employees WHERE id = ?1`).bind(id),
+    audit(env, actor, 'delete', 'employees', id, { name: e.name, code: e.emp_code }),
+  ]);
+  return json({ ok: true });
 }
 
 /** Vehicles with history are deactivated instead of deleted, so reports keep their plate. */
@@ -613,7 +664,7 @@ export async function savePpeInspections({ env, actor, req }: Ctx) {
   assertMyCheck(actor, vi, vehicle.plate);
   const crew = new Set([vi.dman_id, vi.helper1_id, vi.helper2_id].filter((x): x is string => !!x));
   const outsider = emps.find((e) => !crew.has(e));
-  if (outsider) throw bad(`${outsider} ไม่ได้อยู่ในทีมงานของรถ ${vehicle.plate} วันนี้ (ตรวจ PPE ได้เฉพาะทีมที่เลือกตอนตรวจรถ)`);
+  if (outsider) throw bad(`${await empLabel(env, outsider)} ไม่ได้อยู่ในทีมงานของรถ ${vehicle.plate} วันนี้ (ตรวจ PPE ได้เฉพาะทีมที่เลือกตอนตรวจรถ)`);
   const inspector = vi.dman_id;
   await assertEmployeesExist(env, [inspector, ...emps]);
   const { results: codes } = await env.DB.prepare(`SELECT code FROM ppe_items`).all<{ code: string }>();

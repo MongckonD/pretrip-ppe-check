@@ -12,6 +12,7 @@ import * as lic from './license-routes';
 import * as r from './routes';
 import type { Ctx, Env } from './routes';
 import * as trip from './trip-routes';
+import * as imp from './import-routes';
 
 /**
  * true  = staff must send a driving-licence photo before using anything else (no skipping)
@@ -50,11 +51,15 @@ const ROUTES: Route[] = [
   { m: 'PUT', re: /^\/api\/users\/([^/]+)$/, h: a.updateUser },
   { m: 'DELETE', re: /^\/api\/users\/([^/]+)$/, h: a.deleteUser },
   { m: 'POST', re: /^\/api\/users\/([^/]+)\/reset-password$/, h: a.resetPassword },
+  // admin: import employees + accounts from an Excel / CSV file (check first, then import)
+  { m: 'POST', re: /^\/api\/import\/employees$/, h: imp.importEmployees },
+  { m: 'POST', re: /^\/api\/import\/vehicles$/, h: imp.importVehicles },
 
   { m: 'GET', re: /^\/api\/master$/, h: r.getMaster },
   { m: 'PUT', re: /^\/api\/employees\/([^/]+)$/, h: r.putEmployee },
   { m: 'PUT', re: /^\/api\/vehicles$/, h: r.putVehicle },
   { m: 'DELETE', re: /^\/api\/vehicles\/([^/]+)$/, h: r.deleteVehicle },
+  { m: 'DELETE', re: /^\/api\/employees\/([^/]+)$/, h: r.deleteEmployee },
 
   { m: 'GET', re: /^\/api\/vehicle-inspections$/, h: r.listVehicleInspections },
   { m: 'POST', re: /^\/api\/vehicle-inspections$/, h: r.saveVehicleInspection },

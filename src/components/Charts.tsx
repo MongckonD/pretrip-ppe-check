@@ -51,45 +51,54 @@ function Legend({ series }: { series: Series[] }) {
   );
 }
 
-export function LineChart({ labels, series }: { labels: string[]; series: Series[] }) {
+/** colour of a % bar: ≥ good green, ≥ warn amber, below red */
+const pctTone = (v: number, good: number, warn: number) => (v >= good ? 'var(--pass)' : v >= warn ? '#D99A00' : 'var(--fail)');
+
+/**
+ * One bar per day for a percentage (0–100), coloured by how good it is and labelled with its value,
+ * so a bad day stands out at a glance. Days without data show a faint "–".
+ */
+export function PctBarChart({ labels, vals, good = 95, warn = 85, name }: {
+  labels: string[]; vals: (number | null)[]; good?: number; warn?: number; name: string;
+}) {
   const tip = useTip();
-  const mx = Math.max(0, ...series.flatMap((s) => s.vals.filter((v): v is number => v != null)));
-  const { top, ticks } = scaleY(mx);
+  const top = 100, ticks = [0, 25, 50, 75, 100];
   const ih = H - MT - MB;
   const y = (v: number) => MT + ih - (ih * v) / top;
-  const step = (W - ML - MR) / labels.length;
-  const x = (i: number) => ML + step * (i + 0.5);
+  const step = (W - ML - MR) / Math.max(1, labels.length);
+  const bw = Math.max(4, Math.min(28, step * 0.7));
+  const base = H - MB;
+  const every = labels.length > 16 ? 2 : 1;
+  const small = labels.length > 20;
 
   return (
     <div className="chart">
-      <Legend series={series} />
+      <div className="legend">
+        <span><i style={{ background: 'var(--pass)' }} />{good >= 100 ? 'ครบ 100%' : `${good}% ขึ้นไป`}</span>
+        <span><i style={{ background: '#D99A00' }} />{warn}–{good - 1}%</span>
+        <span><i style={{ background: 'var(--fail)' }} />ต่ำกว่า {warn}%</span>
+      </div>
       <div className="chartwrap">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="กราฟเส้นรายวัน">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={name}>
           <Frame top={top} ticks={ticks} />
-          {labels.map((l, i) => (i === 0 || (i + 1) % 5 === 0) && (
-            <text key={i} className="ax" x={x(i)} y={H - 8} textAnchor="middle">{l}</text>
-          ))}
-          {series.map((s) => {
-            const segs: [number, number][][] = [];
-            let cur: [number, number][] = [];
-            s.vals.forEach((v, i) => {
-              if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push([i, v]);
-            });
-            if (cur.length) segs.push(cur);
+          <line className="gl" x1={ML} x2={W - MR} y1={base} y2={base} />
+          {vals.map((v, i) => {
+            const cx = ML + step * (i + 0.5);
+            if (v == null) return <text key={i} className="ax" x={cx} y={base - 4} textAnchor="middle" opacity={0.5}>–</text>;
+            const h = Math.max(2, base - y(v));
             return (
-              <g key={s.name}>
-                {segs.map((g, k) => g.length > 1 ? (
-                  <polyline key={k} points={g.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}
-                    fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                ) : (
-                  <circle key={k} cx={x(g[0][0])} cy={y(g[0][1])} r={3} fill={s.color} />
-                ))}
+              <g key={i}>
+                <path d={roundedBar(cx - bw / 2, base - h, bw, h, 4)} fill={pctTone(v, good, warn)} />
+                <text className="ax pct-val" x={cx} y={base - h - 4} textAnchor="middle" fontSize={small ? 8.5 : 10.5}>{Math.round(v)}</text>
               </g>
             );
           })}
+          {labels.map((l, i) => i % every === 0 && (
+            <text key={`l${i}`} className="ax" x={ML + step * (i + 0.5)} y={H - 8} textAnchor="middle">{l}</text>
+          ))}
           {labels.map((l, i) => (
-            <rect key={i} className="hit" x={x(i) - step / 2} y={MT} width={step} height={ih}
-              onMouseMove={tip.on(`วันที่ ${l}\n` + series.map((s) => `${s.name}: ${s.vals[i] ?? '–'}`).join('\n'))}
+            <rect key={`h${i}`} className="hit" x={ML + step * i} y={MT} width={step} height={ih}
+              onMouseMove={tip.on(`วันที่ ${l}\n${name}: ${vals[i] == null ? 'ไม่มีข้อมูล' : `${vals[i]}%`}`)}
               onMouseLeave={tip.off} />
           ))}
         </svg>

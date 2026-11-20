@@ -11,6 +11,7 @@ import { ComboText } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { listPpeInspections, listTripActivities, listVehicleInspections } from '../lib/api';
 import type { PpeInspection, TripActivity, VehicleInspection } from '../lib/types';
+import { AlertIcon, CheckCircleIcon, HourglassIcon, ListIcon } from '../components/Icons';
 import { downloadText, errMsg, toCsv, today } from '../lib/utils';
 
 interface Data { veh: VehicleInspection[]; ppe: PpeInspection[]; trips: TripActivity[] }
@@ -119,7 +120,7 @@ export function SummaryPage() {
   // dropdown choices: every vehicle / every employee (not only those in the current results)
   const { vehicles, employees } = useMaster();
   const plateOpts = useMemo(() => [...vehicles].sort((a, b) => a.plate.localeCompare(b.plate, 'th')).map((v) => ({ value: v.plate })), [vehicles]);
-  const peopleOpts = useMemo(() => employees.filter((e) => e.name).map((e) => ({ value: e.name, label: `${e.name} (${e.id})` })), [employees]);
+  const peopleOpts = useMemo(() => employees.filter((e) => e.name).map((e) => ({ value: e.name, label: e.code ? `${e.name} (${e.code})` : e.name })), [employees]);
   const box = (k: 'plate' | 'dman' | 'h1' | 'h2', label: string, withNone: boolean) => (
     <div className="rp-field">
       <span className="ro-label">{label}</span>
@@ -200,7 +201,7 @@ interface EmpHours { id: string; name: string; role: string; days: number; minut
  * day's work time. Only finished days count (a day still running is not added yet).
  */
 function HoursDialog({ from: from0, to: to0, onClose }: { from: string; to: string; onClose: () => void }) {
-  const { employees, nameOf } = useMaster();
+  const { employees, nameOf, codeOf } = useMaster();
   const [from, setFrom] = useState(from0);
   const [to, setTo] = useState(to0);
   const [range, setRange] = useState({ from: from0, to: to0 });
@@ -249,13 +250,13 @@ function HoursDialog({ from: from0, to: to0, onClose }: { from: string; to: stri
   }, [data, employees, nameOf]);
 
   const ql = q.trim().toLowerCase();
-  const shown = list.filter((e) => !ql || `${e.id} ${e.name} ${e.role}`.toLowerCase().includes(ql));
+  const shown = list.filter((e) => !ql || `${codeOf(e.id)} ${e.name} ${e.role}`.toLowerCase().includes(ql));
   const running = data ? data.trips.filter((t) => !t.work_ended_at).length : 0;
 
   function csv() {
     const head = ['รหัสพนักงาน', 'ชื่อ', 'ตำแหน่ง', 'วันทำงาน', 'ชั่วโมงรวม (นาที)', 'เฉลี่ย/วัน (นาที)'];
     downloadText(`hours-${range.from}_${range.to}.csv`, toCsv([head, ...shown.map((e) => [
-      e.id, e.name, e.role, e.days, e.minutes, e.days ? Math.round(e.minutes / e.days) : 0,
+      codeOf(e.id), e.name, e.role, e.days, e.minutes, e.days ? Math.round(e.minutes / e.days) : 0,
     ])]));
   }
 
@@ -290,7 +291,7 @@ function HoursDialog({ from: from0, to: to0, onClose }: { from: string; to: stri
                 {shown.map((e, i) => (
                   <tr key={e.id}>
                     <td className="num">{i + 1}</td>
-                    <td><b>{e.name}</b> <span className="note">{e.id}</span></td>
+                    <td><b>{e.name}</b> <span className="note mono">{codeOf(e.id)}</span></td>
                     <td className="note">{e.role || '–'}</td>
                     <td className="num">{e.days}</td>
                     <td className="num"><b>{hm(e.minutes)}</b></td>
@@ -320,10 +321,10 @@ function SummaryCards({ rows }: { rows: Row[] }) {
   const fail = rows.length - pass;
   const wait = rows.filter((r) => r.status === 'wait').length;
   const cards = [
-    { icon: '☰', label: 'ผลตรวจทั้งหมด', value: String(rows.length), tone: 'all' },
-    { icon: '✓', label: 'ผ่าน', value: String(pass), tone: 'pass' },
-    { icon: '!', label: 'ไม่ผ่าน', value: String(fail), tone: 'fail' },
-    { icon: '⏳', label: 'รออนุมัติ', value: String(wait), tone: 'wait' },
+    { icon: <ListIcon />, label: 'ผลตรวจทั้งหมด', value: String(rows.length), tone: 'all' },
+    { icon: <CheckCircleIcon />, label: 'ผ่าน', value: String(pass), tone: 'pass' },
+    { icon: <AlertIcon />, label: 'ไม่ผ่าน', value: String(fail), tone: 'fail' },
+    { icon: <HourglassIcon />, label: 'รออนุมัติ', value: String(wait), tone: 'wait' },
   ];
   return (
     <div className="rp-cards">

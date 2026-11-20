@@ -127,3 +127,81 @@ export const ImageIcon = () => (
     <path d="m4 17.5 5-4.5 3.5 3 3-2.5 4.5 4" />
   </Svg>
 );
+
+/** shop front (store deliveries) */
+export const StoreIcon = () => (
+  <Svg>
+    <path d="M4 9.5 5.5 4.5h13L20 9.5" />
+    <path d="M4 9.5c0 1.4 1.1 2.5 2.7 2.5S9.3 10.9 9.3 9.5c0 1.4 1.2 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1.1 2.5 2.6 2.5S20 10.9 20 9.5" />
+    <path d="M5.5 12v7.5h13V12" />
+    <path d="M10 19.5v-4.5h4v4.5" />
+  </Svg>
+);
+
+/** stopwatch (work clock) */
+export const TimerIcon = () => (
+  <Svg>
+    <circle cx="12" cy="13.5" r="7" />
+    <path d="M12 13.5V10M10 3.5h4M18 7l1.5-1.5" />
+  </Svg>
+);
+
+/* ---- summary-card icons (สถานะรถ / PPE / สรุป) ---- */
+
+/** list of results */
+export const ListIcon = () => (
+  <Svg>
+    <path d="M9 6.5h11M9 12h11M9 17.5h11" />
+    <circle cx="4.5" cy="6.5" r="1.2" /><circle cx="4.5" cy="12" r="1.2" /><circle cx="4.5" cy="17.5" r="1.2" />
+  </Svg>
+);
+/** passed */
+export const CheckCircleIcon = () => (
+  <Svg>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="m8 12.3 2.7 2.7L16.2 9.5" />
+  </Svg>
+);
+/** failed / missing */
+export const AlertIcon = () => (
+  <Svg>
+    <path d="M12 3.5 21 19.5H3z" />
+    <path d="M12 9.5v4.5M12 16.8v.2" />
+  </Svg>
+);
+/** waiting */
+export const HourglassIcon = () => (
+  <Svg>
+    <path d="M7 3.5h10M7 20.5h10" />
+    <path d="M8 3.5c0 4 4 5 4 8.5s-4 4.5-4 8.5M16 3.5c0 4-4 5-4 8.5s4 4.5 4 8.5" />
+  </Svg>
+);
+/** rejected */
+export const XCircleIcon = () => (
+  <Svg>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="m9 9 6 6M15 9l-6 6" />
+  </Svg>
+);
+/** approved */
+export const BadgeCheckIcon = () => (
+  <Svg>
+    <path d="M12 3 14.4 5l3.1-.3.7 3 2.6 1.8-1.3 2.8 1.3 2.8-2.6 1.8-.7 3-3.1-.3L12 21l-2.4-2-3.1.3-.7-3-2.6-1.8 1.3-2.8-1.3-2.8 2.6-1.8.7-3 3.1.3z" />
+    <path d="m8.8 12.2 2.2 2.2 4.2-4.4" />
+  </Svg>
+);
+/** people to check */
+export const UsersIcon = () => (
+  <Svg>
+    <circle cx="9" cy="8.5" r="3.2" />
+    <path d="M3 19.5c.9-3 3.2-4.6 6-4.6s5.1 1.6 6 4.6" />
+    <path d="M15.5 5.6a3 3 0 0 1 0 5.8M17.5 14.9c1.7.6 2.9 2 3.5 4.1" />
+  </Svg>
+);
+/** percentage */
+export const PercentIcon = () => (
+  <Svg>
+    <path d="M18.5 5.5 5.5 18.5" />
+    <circle cx="7" cy="7" r="2.3" /><circle cx="17" cy="17" r="2.3" />
+  </Svg>
+);

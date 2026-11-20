@@ -78,8 +78,9 @@ const q = (opts: ListOpts) => {
 export const authStatus = () => call<{ needs_setup: boolean; user: Me | null }>('GET', '/api/auth/status');
 export const login = (username: string, password: string) =>
   call<{ user: Me }>('POST', '/api/auth/login', { username, password }).then((r) => r.user);
-export const setupAdmin = (username: string, display_name: string, password: string) =>
-  call<{ user: Me }>('POST', '/api/auth/setup', { username, display_name, password }).then((r) => r.user);
+/** first admin: signs in with this employee code from then on */
+export const setupAdmin = (emp_code: string, display_name: string, password: string) =>
+  call<{ user: Me }>('POST', '/api/auth/setup', { emp_code, display_name, password }).then((r) => r.user);
 export async function logout() {
   await call('POST', '/api/auth/logout');
 }
@@ -89,7 +90,8 @@ export async function changePassword(current_password: string, new_password: str
 
 /* ---------- user administration (admin) ---------- */
 export const listUsers = () => call<AppUser[]>('GET', '/api/users');
-export async function createUser(u: { id: string; display_name: string; role: Role; employee_id: string; password: string }) {
+/** the account signs in with the linked employee's code; its internal id is made by the server */
+export async function createUser(u: { display_name: string; role: Role; employee_id: string; password: string }) {
   await call('POST', '/api/users', u);
 }
 export async function updateUser(id: string, patch: Partial<{ display_name: string; role: Role; active: boolean; employee_id: string; unlock: boolean }>) {
@@ -102,17 +104,44 @@ export async function resetUserPassword(id: string, password: string) {
   await call('POST', `/api/users/${encodeURIComponent(id)}/reset-password`, { password });
 }
 
+/* ---------- import employees + accounts from a file (admin) ---------- */
+export interface ImportRowIn { line: number; code: string; name: string; role: string; access: string; account: string; password: string }
+export interface ImportRowOut {
+  line: number; code: string; name: string; role: string; access: Role;
+  employee: 'new' | 'update' | 'same' | 'error'; changes: string[];
+  account: 'new' | 'exists' | 'skip' | 'error'; errors: string[]; temp_password?: string;
+}
+export interface ImportResult {
+  rows: ImportRowOut[];
+  summary: { rows: number; errors: number; new_employees: number; updated_employees: number; new_accounts: number };
+  chunk?: number;
+}
+/** commit = false: check only, nothing is written */
+export const importEmployees = (rows: ImportRowIn[], commit: boolean) =>
+  call<ImportResult>('POST', '/api/import/employees', { rows, commit });
+
+export interface VehImportIn { line: number; plate: string; type: string }
+export interface VehImportOut { line: number; plate: string; type: string; vehicle: 'new' | 'update' | 'same' | 'error'; changes: string[]; errors: string[] }
+export interface VehImportResult { rows: VehImportOut[]; summary: { rows: number; errors: number; new_vehicles: number; updated_vehicles: number } }
+/** vehicles (ทะเบียน · ประเภทรถ); commit = false: check only */
+export const importVehicles = (rows: VehImportIn[], commit: boolean) =>
+  call<VehImportResult>('POST', '/api/import/vehicles', { rows, commit });
+
 /* ---------- master ---------- */
 export const loadMaster = () => call<Master>('GET', '/api/master');
 
 export async function upsertEmployee(e: Employee) {
-  await call('PUT', `/api/employees/${encodeURIComponent(e.id)}`, { name: e.name, role: e.role, active: e.active });
+  await call('PUT', `/api/employees/${encodeURIComponent(e.id)}`, { name: e.name, role: e.role, active: e.active, ...(e.code !== undefined ? { code: e.code } : {}) });
 }
 export async function upsertVehicle(v: Partial<Vehicle> & { plate: string }) {
   await call('PUT', '/api/vehicles', { id: v.id ?? null, plate: v.plate, type: v.type ?? '', active: v.active ?? true });
 }
 export async function deleteVehicle(id: string) {
   await call('DELETE', `/api/vehicles/${encodeURIComponent(id)}`);
+}
+/** only an employee with no history and no account (the server checks) */
+export async function deleteEmployee(id: string) {
+  await call('DELETE', `/api/employees/${encodeURIComponent(id)}`);
 }
 
 /* ---------- vehicle inspections ---------- */

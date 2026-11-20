@@ -5,11 +5,18 @@ import {
 } from './auth';
 import { HttpError, bad, conflict, json, notFound, readJson } from './http';
 import { burnPasswordCheck, hashPassword, passwordProblem, sha256Hex, verifyPassword } from './password';
-import type { Ctx, Env } from './routes';
+import { empLabel, type Ctx, type Env } from './routes';
 import { bool, optEmployeeId, str } from './validate';
 
 const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
-const GENERIC_FAIL = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+const GENERIC_FAIL = 'รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง';
+
+/** company employee code as typed at login: spaces removed, upper case; null if it cannot be one */
+export function empCode(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const s = v.replace(/\s+/g, '').toUpperCase();
+  return /^[A-Z0-9-]{1,20}$/.test(s) ? s : null;
+}
 
 /** id_user: a-z 0-9 . _ - (3–32), case-insensitive input. */
 export function userId(v: unknown): string | null {
@@ -56,38 +63,70 @@ export async function authStatus(req: Request, env: Env, exec: ExecutionContext)
   }
 }
 
-/** POST /api/auth/setup — creates the first admin. Works only while there are no users at all. */
+/**
+ * POST /api/auth/setup — creates the first admin. Works only while there are no users at all.
+ * Sign-in is by employee code, so the admin is also an employee: the code is attached to an existing
+ * employee with that code, or a new employee (next EMP number) is created for it.
+ */
 export async function setup(req: Request, env: Env) {
   const b = await readJson(req);
-  const id = reqUserId(b.username);
-  const display = str(b.display_name, 'ชื่อที่แสดง', 100);
+  const code = empCode(b.emp_code);
+  if (!code) throw bad('รหัสพนักงานใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข และ - (ไม่เกิน 20 ตัว)');
+  const display = str(b.display_name, 'ชื่อ-นามสกุล', 100);
+  if (!display) throw bad('กรอกชื่อ-นามสกุล');
+  const id = accountIdFor(code);
   const pw = reqPassword(b.password, id);
   const hash = await hashPassword(pw);
-  const r = await env.DB.prepare(
-    `INSERT INTO users (id, display_name, role, password_hash, must_change_password, password_changed_at)
-     SELECT ?1, ?2, 'admin', ?3, 0, ${NOW_SQL} WHERE NOT EXISTS (SELECT 1 FROM users)`,
-  ).bind(id, display, hash).run();
-  if (r.meta.changes !== 1) throw conflict('ระบบตั้งค่าผู้ดูแลไปแล้ว กรุณาเข้าสู่ระบบ');
+  const any = await env.DB.prepare(`SELECT EXISTS (SELECT 1 FROM users) AS has`).first<{ has: number }>();
+  if (any?.has) throw conflict('ระบบตั้งค่าผู้ดูแลไปแล้ว กรุณาเข้าสู่ระบบ');
+  const emp = await env.DB.prepare(`SELECT id FROM employees WHERE emp_code = ?1`).bind(code).first<{ id: string }>()
+    ?? { id: await nextEmployeeId(env), fresh: true };
+  const stmts = [];
+  if ('fresh' in emp) {
+    stmts.push(env.DB.prepare(`INSERT INTO employees (id, name, emp_code, active, active_from) VALUES (?1, ?2, ?3, 1, date('now', '+7 hours'))`)
+      .bind(emp.id, display, code));
+  }
+  stmts.push(env.DB.prepare(
+    `INSERT INTO users (id, display_name, role, employee_id, password_hash, must_change_password, password_changed_at)
+     SELECT ?1, ?2, 'admin', ?3, ?4, 0, ${NOW_SQL} WHERE NOT EXISTS (SELECT 1 FROM users)`,
+  ).bind(id, display, emp.id, hash));
+  const res = await env.DB.batch(stmts);
+  if (res[res.length - 1].meta.changes !== 1) throw conflict('ระบบตั้งค่าผู้ดูแลไปแล้ว กรุณาเข้าสู่ระบบ');
   const s = await createSession(env, id, req);
-  await env.DB.batch([s.stmt, audit(env, id, 'create', 'users', id, { role: 'admin', setup: true })]);
-  return json({ user: { id, display_name: display, role: 'admin', employee_id: null, must_change_password: false, consented: false, has_license: false } }, 201,
+  await env.DB.batch([s.stmt, audit(env, id, 'create', 'users', id, { role: 'admin', setup: true, employee_id: emp.id })]);
+  return json({ user: { id, display_name: display, role: 'admin', employee_id: emp.id, must_change_password: false, consented: false, has_license: false } }, 201,
     { 'set-cookie': sessionCookie(s.token) });
+}
+
+/** internal account id made from the employee code (never typed by anyone) */
+export function accountIdFor(code: string) {
+  const s = code.toLowerCase();
+  return /^[a-z0-9._-]{3,32}$/.test(s) ? s : `emp-${s}`.slice(0, 32);
+}
+async function nextEmployeeId(env: Env) {
+  const r = await env.DB.prepare(
+    `SELECT coalesce(max(CAST(substr(id, 4) AS INTEGER)), 0) + 1 AS n FROM employees WHERE id GLOB 'EMP[0-9]*'`,
+  ).first<{ n: number }>();
+  return 'EMP' + String(r?.n ?? 1).padStart(2, '0');
 }
 
 /** POST /api/auth/login */
 export async function login(req: Request, env: Env) {
   await throttleLogin(env, clientIp(req));
   const b = await readJson(req);
-  const id = userId(b.username);
+  // Sign in ONLY with the company employee code: employees.emp_code of the employee linked to the account.
+  // (The account's internal id — users.id — is never typed at login.)
+  const code = empCode(b.username);
   const pw = typeof b.password === 'string' ? b.password : '';
-  if (!id || !pw || pw.length > 128) {
+  if (!code || !pw || pw.length > 128) {
     await burnPasswordCheck(pw.slice(0, 128));
     throw new HttpError(401, GENERIC_FAIL);
   }
   const u = await env.DB.prepare(
-    `SELECT id, display_name, role, active, employee_id, password_hash, must_change_password, failed_logins, locked_until
-     FROM users WHERE id = ?1`,
-  ).bind(id).first<{
+    `SELECT u.id, u.display_name, u.role, u.active, u.employee_id, u.password_hash, u.must_change_password, u.failed_logins, u.locked_until
+     FROM employees e JOIN users u ON u.employee_id = e.id
+     WHERE e.emp_code = ?1`,
+  ).bind(code).first<{
     id: string; display_name: string; role: Role; active: number; employee_id: string | null;
     password_hash: string; must_change_password: number; failed_logins: number; locked_until: string | null;
   }>();
@@ -95,6 +134,7 @@ export async function login(req: Request, env: Env) {
     await burnPasswordCheck(pw);
     throw new HttpError(401, GENERIC_FAIL);
   }
+  const id = u.id;
   const now = Date.now();
   if (u.locked_until && Date.parse(u.locked_until) > now) {
     const mins = Math.ceil((Date.parse(u.locked_until) - now) / 60_000);
@@ -190,35 +230,41 @@ export async function listUsers({ env, actor }: Ctx) {
   return json(results.map(userOut));
 }
 
-/** The employee must exist and must not already be linked to another account (one employee = one account). */
-async function assertEmployee(env: Env, id: string | null, userIdSelf: string) {
-  if (!id) return;
-  const e = await env.DB.prepare(`SELECT id FROM employees WHERE id = ?1`).bind(id).first();
-  if (!e) throw bad(`ไม่พบรหัสพนักงาน ${id}`);
+/**
+ * Every account signs in with its employee's code, so the employee must exist, must have a code,
+ * and must not already be linked to another account (one employee = one account).
+ */
+async function assertEmployee(env: Env, id: string | null, userIdSelf: string): Promise<{ name: string; code: string }> {
+  if (!id) throw bad('ต้องผูกบัญชีกับพนักงานที่มีรหัสพนักงาน — รหัสพนักงานใช้เข้าสู่ระบบ');
+  const e = await env.DB.prepare(`SELECT name, emp_code FROM employees WHERE id = ?1`).bind(id).first<{ name: string; emp_code: string | null }>();
+  if (!e) throw bad('ไม่พบพนักงานที่เลือก');
+  if (!e.emp_code) throw bad(`${e.name || 'พนักงานคนนี้'} ยังไม่มีรหัสพนักงาน — ใส่รหัสในตารางพนักงานก่อน (ใช้เข้าสู่ระบบ)`);
   const other = await env.DB.prepare(`SELECT id FROM users WHERE employee_id = ?1 AND id <> ?2`)
     .bind(id, userIdSelf).first<{ id: string }>();
-  if (other) throw conflict(`พนักงาน ${id} ผูกกับบัญชี ${other.id} อยู่แล้ว — พนักงาน 1 คนมีได้บัญชีเดียว (ยกเลิกการผูกที่บัญชีเดิมก่อน)`);
+  if (other) throw conflict(`${await empLabel(env, id)} มีบัญชีอยู่แล้ว — พนักงาน 1 คนมีได้บัญชีเดียว`);
+  return { name: e.name, code: e.emp_code };
 }
 
 export async function createUser({ env, actor, req }: Ctx) {
   requireRole(actor, 'admin');
   const b = await readJson(req);
-  const id = reqUserId(b.id);
-  const display = str(b.display_name, 'ชื่อที่แสดง', 100);
   const role = b.role ?? 'user';
   if (!isRole(role)) throw bad('สิทธิ์ต้องเป็น admin หรือ user');
-  const emp = optEmployeeId(b.employee_id, 'รหัสพนักงาน');
+  const emp = optEmployeeId(b.employee_id, 'พนักงาน');
+  const e = await assertEmployee(env, emp, '');
+  // the account id is internal only; made from the employee code so it is unique and readable in logs
+  const id = accountIdFor(e.code);
+  const display = str(b.display_name, 'ชื่อที่แสดง', 100) || e.name;
   const pw = reqPassword(b.password, id);
   const exists = await env.DB.prepare(`SELECT id FROM users WHERE id = ?1`).bind(id).first();
-  if (exists) throw conflict(`มีผู้ใช้ ${id} อยู่แล้ว`);
-  await assertEmployee(env, emp, id);
+  if (exists) throw conflict(`มีบัญชีภายในชื่อ ${id} อยู่แล้ว — ติดต่อผู้พัฒนาระบบ`);
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO users (id, display_name, role, employee_id, password_hash, must_change_password) VALUES (?1, ?2, ?3, ?4, ?5, 0)`,
     ).bind(id, display, role, emp, await hashPassword(pw)),
     audit(env, actor.id, 'create', 'users', id, { role, display_name: display, employee_id: emp }),
   ]);
-  return json({ id }, 201);
+  return json({ id, emp_code: e.code }, 201);
 }
 
 /** Make sure at least one active admin remains after a change to `target`. */

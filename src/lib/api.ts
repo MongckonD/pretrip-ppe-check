@@ -12,7 +12,7 @@ export const isTestMode = import.meta.env.VITE_BACKEND !== 'cloudflare';
 const api = isTestMode ? mock : cloud;
 
 export const {
-  loadMaster, upsertEmployee, upsertVehicle, deleteVehicle,
+  loadMaster, upsertEmployee, deleteEmployee, upsertVehicle, deleteVehicle,
   listVehicleInspections, saveVehicleInspection, deleteVehicleInspection, setVehicleApproval, setVehicleRejection,
   uploadPhoto, removePhotos, signedUrls,
   listPpeInspections, savePpeInspections, deletePpeInspection,
@@ -25,6 +25,6 @@ export const resetDemo = mock.resetDemo;
 // login & user administration exist only with the real backend
 export const {
   authStatus, login, setupAdmin, logout, changePassword,
-  listUsers, createUser, updateUser, deleteUser, resetUserPassword, UNAUTHORIZED_EVENT, acceptConsent, keepAlive,
+  listUsers, createUser, updateUser, deleteUser, resetUserPassword, UNAUTHORIZED_EVENT, acceptConsent, keepAlive, importEmployees, importVehicles,
 } = cloud;
-export type { AppUser, Me, Role } from './api.cloudflare';
+export type { AppUser, ImportResult, ImportRowIn, ImportRowOut, Me, Role, VehImportIn, VehImportOut, VehImportResult } from './api.cloudflare';

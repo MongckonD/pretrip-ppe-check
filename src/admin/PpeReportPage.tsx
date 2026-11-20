@@ -9,6 +9,7 @@ import { ComboText } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { listPpeInspections, listVehicleInspections } from '../lib/api';
 import type { PpeInspection, PpeResult, VehicleInspection } from '../lib/types';
+import { AlertIcon, CheckCircleIcon, HourglassIcon, ListIcon, PercentIcon, UsersIcon } from '../components/Icons';
 import { downloadText, errMsg, toCsv, today } from '../lib/utils';
 
 type Result = 'ok' | 'missing' | 'partial' | 'none';
@@ -35,7 +36,7 @@ const addDays = (iso: string, n: number) => { const d = new Date(iso + 'T00:00')
 const has = (cell: string, q: string) => !q || cell.toLowerCase().includes(q.trim().toLowerCase());
 
 export function PpeReportPage() {
-  const { employees, vehicles, ppeItems, nameOf } = useMaster();
+  const { employees, vehicles, ppeItems, nameOf, codeOf } = useMaster();
   const items = useMemo(() => ppeItems.filter((p) => p.active).sort((a, b) => a.sort_order - b.sort_order), [ppeItems]);
   const [draft, setDraft] = useState<Filters>(todayFilters);
   const [applied, setApplied] = useState<Filters>(todayFilters);
@@ -79,9 +80,9 @@ export function PpeReportPage() {
     }).sort((a, b) => b.date.localeCompare(a.date) || a.plate.localeCompare(b.plate, 'th') || a.duty.localeCompare(b.duty) || a.empId.localeCompare(b.empId));
   }, [data, employees, nameOf]);
 
-  const rows = useMemo(() => all.filter((r) => (has(r.name, applied.emp) || has(r.empId, applied.emp)) && has(r.plate, applied.plate)
+  const rows = useMemo(() => all.filter((r) => (has(r.name, applied.emp) || has(codeOf(r.empId), applied.emp)) && has(r.plate, applied.plate)
     && (!applied.result || r.result === applied.result)
-    && (!applied.item || r.results[applied.item] === 2)), [all, applied]);
+    && (!applied.item || r.results[applied.item] === 2)), [all, applied, codeOf]);
   useEffect(() => { setPage(0); }, [rows]);
 
   function search(next: Filters = draft) {
@@ -94,7 +95,7 @@ export function PpeReportPage() {
   }
   const quick = (from: string, to: string) => search({ ...draft, from, to });
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setDraft((f) => ({ ...f, [k]: v }));
-  const empOpts = useMemo(() => employees.filter((e) => e.name).map((e) => ({ value: e.name, label: `${e.name} (${e.id})` })), [employees]);
+  const empOpts = useMemo(() => employees.filter((e) => e.name).map((e) => ({ value: e.name, label: e.code ? `${e.name} (${e.code})` : e.name })), [employees]);
   const plateOpts = useMemo(() => [...vehicles].sort((a, b) => a.plate.localeCompare(b.plate, 'th')).map((v) => ({ value: v.plate })), [vehicles]);
 
   // cards over the rows found
@@ -112,7 +113,7 @@ export function PpeReportPage() {
   function csv() {
     const head = ['ลำดับ', 'วันที่', 'รหัสพนักงาน', 'ชื่อ', 'ตำแหน่ง', 'หน้าที่บนรถ', 'ทะเบียนรถ', 'ผู้ตรวจ', ...items.map((i) => i.name), 'ผล'];
     downloadText(`ppe-${applied.from}_${applied.to}.csv`, toCsv([head, ...rows.map((r, i) => [
-      i + 1, r.date, r.empId, r.name, r.position, r.duty, r.plate, r.inspector,
+      i + 1, r.date, codeOf(r.empId), r.name, r.position, r.duty, r.plate, r.inspector,
       ...items.map((it) => (r.results[it.code] === 1 ? 'มี' : r.results[it.code] === 2 ? 'ไม่มี' : '')), RESULT[r.result].text,
     ])]));
   }
@@ -162,12 +163,12 @@ export function PpeReportPage() {
       {data && (
         <div className="rp-cards">
           {[
-            { icon: '☰', label: 'ต้องตรวจ (ทีมบนรถ)', value: String(expected), tone: 'all' },
-            { icon: '✓', label: 'ตรวจแล้ว', value: String(checked), tone: 'all' },
-            { icon: '✔', label: 'ครบ', value: String(ok), tone: 'pass' },
-            { icon: '!', label: 'ขาด / ตรวจไม่ครบ', value: String(missing), tone: 'fail' },
-            { icon: '⏳', label: 'ยังไม่ตรวจ', value: String(notYet), tone: 'wait' },
-            { icon: '%', label: 'PPE ครบ (ของที่ตรวจแล้ว)', value: pct === null ? '–' : `${pct}%`, tone: 'time' },
+            { icon: <UsersIcon />, label: 'ต้องตรวจ (ทีมบนรถ)', value: String(expected), tone: 'all' },
+            { icon: <ListIcon />, label: 'ตรวจแล้ว', value: String(checked), tone: 'all' },
+            { icon: <CheckCircleIcon />, label: 'ครบ', value: String(ok), tone: 'pass' },
+            { icon: <AlertIcon />, label: 'ขาด / ตรวจไม่ครบ', value: String(missing), tone: 'fail' },
+            { icon: <HourglassIcon />, label: 'ยังไม่ตรวจ', value: String(notYet), tone: 'wait' },
+            { icon: <PercentIcon />, label: 'PPE ครบ (ของที่ตรวจแล้ว)', value: pct === null ? '–' : `${pct}%`, tone: 'time' },
           ].map((c) => (
             <div key={c.label} className={`rp-card ${c.tone}`}>
               <span className="rp-ico" aria-hidden="true">{c.icon}</span>
@@ -198,7 +199,7 @@ export function PpeReportPage() {
                     <tr key={r.key} className={r.result === 'none' ? 'vs-none' : ''}>
                       <td className="num">{p * 10 + i + 1}</td>
                       <td className="mono">{mdy(r.date)}</td>
-                      <td><b>{r.name}</b> <span className="note">{r.empId}</span>{r.position && <div className="note">{r.position}</div>}</td>
+                      <td><b>{r.name}</b> <span className="note mono">{codeOf(r.empId)}</span>{r.position && <div className="note">{r.position}</div>}</td>
                       <td>{r.duty}</td>
                       <td><b>{r.plate || '–'}</b></td>
                       <td>{r.inspector || '–'}</td>

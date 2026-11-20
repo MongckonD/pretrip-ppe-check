@@ -58,7 +58,15 @@ export const END_CODE = 'D05';
 export const activityName = (code: string) => ACTIVITIES.find((a) => a.code === code)?.name ?? code;
 export const phaseOf = (code: string) => code[0] as Phase;
 
-export interface Store { id: string; name: string; type: StoreType }
+export interface Store {
+  id: string; name: string; type: StoreType;
+  /** optional details shown when picking the store */
+  address?: string;
+  contact?: string;
+  phone?: string;
+  /** where to unload / receive, things to watch out for */
+  note?: string;
+}
 export type MoveMethod = 'carry' | 'trolley' | 'both';
 export const MOVE_METHODS: { code: MoveMethod; name: string }[] = [
   { code: 'trolley', name: 'รถเข็น' },

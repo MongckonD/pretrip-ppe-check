@@ -3,7 +3,8 @@ export type VehResult = 1 | 2 | 3;
 /** 1 = มี, 2 = ไม่มี */
 export type PpeResult = 1 | 2;
 
-export interface Employee { id: string; name: string; role: string; active: boolean }
+/** id = internal key (EMP01; never shown) · code = company employee code (shown everywhere, used to sign in) */
+export interface Employee { id: string; name: string; role: string; active: boolean; code?: string }
 export interface Vehicle { id: string; plate: string; type: string; active: boolean }
 export interface CheckItem { item_no: number; name: string; hint: string; active: boolean }
 export interface PpeItem { code: string; name: string; sort_order: number; active: boolean }

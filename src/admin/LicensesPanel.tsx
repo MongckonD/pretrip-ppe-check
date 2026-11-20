@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { licensePhotoUrl, listLicenses } from '../lib/api';
 import { statusText, thaiDate, type LicenseRow } from '../lib/license';
 import { errMsg } from '../lib/utils';
+import { useMaster } from '../components/MasterContext';
 import { LicensePill } from '../pages/LicensePage';
 
 type Filter = 'all' | 'expired' | 'expiring' | 'valid';
@@ -17,6 +18,7 @@ const matches = (r: LicenseRow, f: Filter) =>
     : r.status === f;
 
 export function LicensesPage() {
+  const { codeOf } = useMaster();
   const [data, setData] = useState<{ rows: LicenseRow[]; warn_days: number } | null>(null);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -32,9 +34,9 @@ export function LicensesPage() {
     if (!data) return [];
     const s = q.trim().toLowerCase();
     return data.rows.filter((r) => matches(r, filter) && (!s || [
-      r.display_name, r.employee_name, r.employee_id, r.user_id, r.license.full_name, r.license.license_no,
+      r.display_name, r.employee_name, codeOf(r.employee_id), r.license.full_name, r.license.license_no,
     ].some((v) => v?.toLowerCase().includes(s))));
-  }, [data, filter, q]);
+  }, [data, filter, q, codeOf]);
 
   if (error) {
     return (
@@ -87,7 +89,7 @@ export function LicensesPage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.user_id} className={`st-${r.status}`}>
-                    <td><b>{r.display_name || r.employee_name || r.user_id}</b><div className="note">{r.employee_id ?? r.user_id}</div></td>
+                    <td><b>{r.employee_name || r.display_name || '—'}</b><div className="note mono">{codeOf(r.employee_id) || 'ยังไม่มีรหัสพนักงาน'}</div></td>
                     <td>{r.license.full_name}</td>
                     <td className="mono">{r.license.license_no}</td>
                     <td>

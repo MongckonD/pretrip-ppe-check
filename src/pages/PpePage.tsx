@@ -22,7 +22,7 @@ type Rows = Record<string, Record<string, PpeResult>>;
 interface CrewMember { id: string; role: string }
 
 export function PpePage({ goVehicle, goTime }: { goVehicle?: () => void; goTime?: () => void }) {
-  const { ppeItems, nameOf } = useMaster();
+  const { ppeItems, nameOf, codeOf } = useMaster();
   const toast = useToast();
   const items = ppeItems.filter((p) => p.active);
 
@@ -121,7 +121,7 @@ export function PpePage({ goVehicle, goTime }: { goVehicle?: () => void; goTime?
       <div className="mt">
         {crew.map((c) => (
           <div className="emp" key={c.id}>
-            <div><b>{nameOf(c.id)}</b> <span className="note">{c.id} · {c.role}</span></div>
+            <div><b>{nameOf(c.id)}</b> <span className="note">{[codeOf(c.id), c.role].filter(Boolean).join(' · ')}</span></div>
             <div className="ppeit">
               {items.map((p) => (
                 <div key={p.code}>

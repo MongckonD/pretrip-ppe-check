@@ -4,7 +4,7 @@
  * Each page passes its own tabs; master data, password change and errors are handled here.
  * Every tab has its own URL path (e.g. /ppe, /admin/data): links, refresh and the back button work.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { isTestMode, loadMaster, type Me } from '../lib/api';
 import type { Master } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
@@ -26,6 +26,12 @@ export interface TabDef {
   render: (c: PageCtx) => ReactNode;
   /** optional status next to the label (e.g. vehicle-check approval) */
   badge?: ReactNode;
+  /**
+   * key of the menu item this tab sits under. A tab with children is only a heading: opening it
+   * opens its first child. Children show under it in the sidebar; on tablet / phone (no room in the
+   * rail or bottom bar) they show as a strip at the top of the page instead.
+   */
+  parent?: string;
 }
 
 export interface ShellProps {
@@ -39,10 +45,15 @@ export interface ShellProps {
 
 const normPath = (p: string) => (p.toLowerCase().replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/');
 
+/** a menu heading opens its first child */
+function resolve(tabs: TabDef[], t: TabDef): TabDef {
+  return tabs.find((x) => x.parent === t.key) ?? t;
+}
+
 /** Tab for the current address; unknown paths fall back to the first tab. */
 function tabFromUrl(tabs: TabDef[]): TabDef {
   const here = normPath(window.location.pathname);
-  return tabs.find((t) => normPath(t.path) === here) ?? tabs[0];
+  return resolve(tabs, tabs.find((t) => normPath(t.path) === here) ?? tabs[0]);
 }
 
 export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
@@ -62,7 +73,10 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
   const ctx = useMemo(() => (master ? buildMasterCtx(master, reload) : null), [master, reload]);
 
   // address bar always shows the open tab's path (fixes /, /admin/ and unknown paths in place)
-  const current = tabs.find((t) => t.key === tab) ?? tabs[0];
+  const current = resolve(tabs, tabs.find((t) => t.key === tab) ?? tabs[0]);
+  // the open tab's menu heading, and its sub-tabs
+  const top = current.parent ? tabs.find((t) => t.key === current.parent) ?? current : current;
+  const siblings = tabs.filter((t) => t.parent && t.parent === current.parent);
   useEffect(() => {
     if (normPath(window.location.pathname) !== normPath(current.path)) {
       window.history.replaceState(null, '', current.path + window.location.search + window.location.hash);
@@ -78,25 +92,28 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
   }, [tabs]);
 
   const go = useCallback((t: string) => {
-    const next = tabs.find((x) => x.key === t);
-    if (!next) return;
+    const found = tabs.find((x) => x.key === t);
+    if (!found) return;
+    const next = resolve(tabs, found);
     if (normPath(window.location.pathname) !== normPath(next.path)) window.history.pushState(null, '', next.path);
-    setTab(t);
+    setTab(next.key);
     setPwOpen(false);
     window.scrollTo({ top: 0 });
   }, [tabs]);
 
   const togglePw = () => { setPwOpen((o) => !o); setPwDone(false); };
+  // who is signed in: the employee's name (never the internal account id)
+  const who = (me && (master?.employees.find((e) => e.id === me.employee_id)?.name || me.display_name)) || 'ผู้ใช้';
   const userBox = isTestMode ? (
     <>
       <span className="test-badge" title="ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น ยังไม่ได้เชื่อม Cloudflare">โหมดทดสอบ</span>
     </>
   ) : me && (
     <>
-      <div className="who" title={`${me.id} · ${ROLE_LABEL[me.role]}`}>
-        <span className="avatar" aria-hidden="true">{(me.display_name || me.id).slice(0, 1).toUpperCase()}</span>
+      <div className="who" title={`${who} · ${ROLE_LABEL[me.role]}`}>
+        <span className="avatar" aria-hidden="true">{who.slice(0, 1).toUpperCase()}</span>
         <span className="who-text">
-          <b>{me.display_name || me.id}</b>
+          <b>{who}</b>
           <span>{ROLE_LABEL[me.role]}</span>
         </span>
       </div>
@@ -130,11 +147,28 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
         <aside className="side">
           <div className="brand side-brand">{brand}</div>
           <nav className="nav" role="tablist" aria-label="เมนูหลัก" aria-orientation="vertical">
-            {tabs.map((t) => (
-              <button key={t.key} role="tab" aria-selected={tab === t.key} aria-label={t.label} onClick={() => go(t.key)}>
-                <t.icon /><span className="nav-full">{t.label}</span><span className="nav-short">{t.short ?? t.label}</span>{t.badge}
-              </button>
-            ))}
+            {tabs.filter((t) => !t.parent).map((t) => {
+              const kids = tabs.filter((k) => k.parent === t.key);
+              const on = top.key === t.key;
+              return (
+                <Fragment key={t.key}>
+                  <button role="tab" aria-selected={on} aria-expanded={kids.length ? on : undefined} aria-label={t.label} onClick={() => go(t.key)}>
+                    <t.icon /><span className="nav-full">{t.label}</span><span className="nav-short">{t.short ?? t.label}</span>{t.badge}
+                    {kids.length > 0 && <span className="nav-caret" aria-hidden>{on ? '▾' : '▸'}</span>}
+                  </button>
+                  {/* sub-tabs: sidebar only (desktop) */}
+                  {on && kids.length > 0 && (
+                    <div className="nav-sub" role="group" aria-label={t.label}>
+                      {kids.map((k) => (
+                        <button key={k.key} type="button" className="nav-sub-btn" aria-current={current.key === k.key ? 'page' : undefined} onClick={() => go(k.key)}>
+                          <k.icon /><span>{k.label}</span>{k.badge}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </Fragment>
+              );
+            })}
           </nav>
           <div className="side-foot">{userBox}</div>
         </aside>
@@ -145,6 +179,16 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
             <span className="note">{new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
           </div>
           <main className="content">
+            {/* sub-tabs on tablet / phone, where the rail and bottom bar have no room for them */}
+            {siblings.length > 1 && (
+              <div className="page-subtabs" role="tablist" aria-label={top.label}>
+                {siblings.map((k) => (
+                  <button key={k.key} type="button" role="tab" aria-selected={current.key === k.key} onClick={() => go(k.key)}>
+                    <k.icon /><span>{k.label}</span>{k.badge}
+                  </button>
+                ))}
+              </div>
+            )}
             {pwOpen && <ChangePasswordForm onDone={() => { setPwOpen(false); setPwDone(true); }} onCancel={() => setPwOpen(false)} />}
             {pwDone && <div className="panel ok-panel">เปลี่ยนรหัสผ่านแล้ว</div>}
             {banner?.(go, current.key)}
