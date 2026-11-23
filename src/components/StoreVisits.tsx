@@ -19,6 +19,7 @@ import {
 } from '../lib/storeVisit';
 import { today } from '../lib/utils';
 import { useMe } from './Auth';
+import { ConfirmButton } from './ConfirmButton';
 import { useToast } from './Toast';
 
 /* ---------------- prototype storage (this browser only) ---------------- */
@@ -129,7 +130,6 @@ export function StoreVisits({ plate }: { plate: string }) {
   }
 
   function cancel() {
-    if (!window.confirm('ยกเลิกการจับเวลาร้านนี้? เวลาที่จับไว้จะหายทั้งหมด')) return;
     setData((d) => ({ ...d, active: null }));
   }
 
@@ -142,9 +142,6 @@ export function StoreVisits({ plate }: { plate: string }) {
 
   /** TRIAL ONLY: clear every store, visit and running timer of this account in this browser (sample stores come back) */
   function resetTrial() {
-    if (!window.confirm(
-      'รีเซ็ตข้อมูลทดลองทั้งหมด?\n\n• ร้านที่เพิ่มเอง จะหาย (กลับเป็นร้านตัวอย่าง 4 ร้าน)\n• ร้านที่ส่งแล้วและเวลาที่จับไว้ทุกวัน จะหาย\n• ร้านที่กำลังจับเวลาอยู่ จะถูกยกเลิก\n\nมีผลเฉพาะเครื่องนี้และบัญชีนี้ ไม่กระทบข้อมูลอื่นในระบบ',
-    )) return;
     setData({ stores: SAMPLE_STORES, visits: [], active: null });
     setJustSaved(null);
     toast('รีเซ็ตข้อมูลทดลองแล้ว');
@@ -163,7 +160,8 @@ export function StoreVisits({ plate }: { plate: string }) {
       <div className="sv-trial" role="note">
         <span><b>ทดลองใช้</b> ข้อมูลร้านและเวลาที่จับเก็บไว้ในเครื่องนี้เท่านั้น ยังไม่ส่งเข้าระบบ — ใช้ดูหน้าตาและลองกดก่อนออกแบบฐานข้อมูลจริง</span>
         {/* trial only: wipe this account's trial data in this browser and start over */}
-        <button type="button" className="btn danger sm" onClick={resetTrial}>รีเซ็ตข้อมูลทดลอง</button>
+        <ConfirmButton className="btn danger sm" onConfirm={resetTrial}
+          confirmText="แตะอีกครั้ง: ล้างร้านที่เพิ่มเองและเวลาที่จับไว้ทั้งหมด (เฉพาะเครื่องนี้)">รีเซ็ตข้อมูลทดลอง</ConfirmButton>
       </div>
       <p className="note flush-note">
         จับเวลาแยกจากเวลาเริ่มงาน · เริ่มเมื่อ<b>รถจอดหน้าร้าน</b> จบเมื่อ<b>รถออกจากร้าน</b> · รถ {plate}
@@ -513,7 +511,7 @@ function RunningVisit({ no, v, onGo, onUndo, onCancel }: {
 
       {picking && <StepPicker v={v} cur={cur.code} onPick={onGo} onClose={() => setPicking(false)} />}
 
-      <button type="button" className="sv-cancel" onClick={onCancel}>ยกเลิกร้านนี้</button>
+      <ConfirmButton className="sv-cancel" onConfirm={onCancel} confirmText="แตะอีกครั้งเพื่อยกเลิกร้านนี้ (เวลาที่จับไว้จะหาย)">ยกเลิกร้านนี้</ConfirmButton>
     </div>
   );
 }

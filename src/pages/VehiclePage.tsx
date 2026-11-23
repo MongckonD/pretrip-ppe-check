@@ -3,6 +3,7 @@ import { notifyVehicleCheckChanged } from '../components/CheckStatus';
 import { useMe } from '../components/Auth';
 import { useMaster } from '../components/MasterContext';
 import { EmployeeSelect, PlateInput, ReadOnlyField, Seg, fromIso, thaiClock, thaiDay, useNow, useSignedUrls } from '../components/Fields';
+import { ConfirmButton } from '../components/ConfirmButton';
 import { CheckCircleIcon, HourglassIcon, RefreshIcon, XCircleIcon } from '../components/Icons';
 import { useToast } from '../components/Toast';
 import { listVehicleInspections, removePhotos, saveVehicleInspection, uploadPhoto } from '../lib/api';
@@ -132,6 +133,8 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
   // today's records: not shown on this page, only used to warn before replacing a plate's earlier check
   const [records, setRecords] = useState<VehicleInspection[]>([]);
   const [saving, setSaving] = useState(false);
+  // this plate already has today's check: the first press of "บันทึก" warns, the second one replaces it (no pop-up)
+  const [replaceOk, setReplaceOk] = useState('');
   const [uploading, setUploading] = useState<string | null>(null);
   // photos uploaded in this form session but not yet saved; cleaned up when replaced/removed
   const [fresh, setFresh] = useState<Set<string>>(() => new Set(restored?.fresh ?? []));
@@ -145,7 +148,6 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
 
   /** start over: drop what was filled in (photos uploaded in this form are removed) */
   function clearForm() {
-    if (!window.confirm('ล้างข้อมูลที่กรอกไว้ทั้งหมดในฟอร์มนี้?')) return;
     if (fresh.size) removePhotos([...fresh]).catch(() => {});
     setFresh(new Set());
     setF(initial ?? blankForm());
@@ -251,8 +253,10 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
     }
     if (f.mileage && !/^\d+$/.test(f.mileage.trim())) return toast('เลขไมล์ต้องเป็นตัวเลข');
     const dup = records.find((r) => r.plate === f.plate.trim() && r.id !== f.id);
-    if (dup && !window.confirm(`ทะเบียน ${dup.plate} มีบันทึกการตรวจของวันนี้แล้ว
-บันทึกครั้งนี้จะแทนที่ของเดิม ต้องการบันทึกต่อไหม?`)) return;
+    if (dup && replaceOk !== dup.id) {
+      setReplaceOk(dup.id);
+      return toast(`ทะเบียน ${dup.plate} มีบันทึกการตรวจของวันนี้แล้ว — กดบันทึกอีกครั้งเพื่อแทนที่ของเดิม`);
+    }
     setSaving(true);
     try {
       const id = await saveVehicleInspection({ ...f, date: today(), time: nowTime() });
@@ -362,11 +366,16 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
           {fails ? `พบ ${fails} ข้อไม่ผ่าน ผลตรวจ: ไม่ผ่าน` : done ? 'ผลตรวจ: ผ่าน' : ''}
         </span>
         <div className="row">
-          {!f.id && hasInput(f) && <button className="btn ghost" type="button" disabled={saving || uploading !== null} onClick={clearForm}>ล้างฟอร์ม</button>}
+          {!f.id && hasInput(f) && (
+            <ConfirmButton className="btn ghost" disabled={saving || uploading !== null} onConfirm={clearForm}
+              confirmText="แตะอีกครั้งเพื่อล้างทั้งฟอร์ม">ล้างฟอร์ม</ConfirmButton>
+          )}
           {onCancelEdit && <button className="btn ghost" type="button" disabled={saving}
             onClick={() => { writeDraft(dKey, null); sent.current = true; onCancelEdit(); }}>ยกเลิกการแก้ไข</button>}
           <button className="btn" type="button" disabled={saving || uploading !== null} onClick={save}>
-            {saving ? 'กำลังบันทึก…' : f.id ? 'ส่งข้อมูลที่แก้ไขอีกครั้ง' : 'บันทึกการตรวจ'}
+            {saving ? 'กำลังบันทึก…'
+              : replaceOk && records.some((r) => r.id === replaceOk && r.plate === f.plate.trim()) ? 'บันทึกแทนที่ของเดิม'
+              : f.id ? 'ส่งข้อมูลที่แก้ไขอีกครั้ง' : 'บันทึกการตรวจ'}
           </button>
         </div>
       </div>

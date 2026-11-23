@@ -1274,3 +1274,10 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .dl-main .plan-store-name { font-size: 17px; }
 .dl-bills td { font-size: 15px; }
 .dl-cases b { font-size: 22px; }
+
+/* second tap to confirm (ConfirmButton) */
+.confirm-armed { background: var(--fail) !important; border-color: var(--fail) !important; color: #fff !important; }
+/* user popup: permanent delete with the code typed on the page */
+.user-delete { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--fail-bg); border: 1px solid #F4B3B6; font-size: 14px; }
+.user-delete ul { margin: 0; padding-left: 18px; }
+.user-delete label { display: grid; gap: 4px; }

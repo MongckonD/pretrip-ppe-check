@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ConfirmButton } from '../components/ConfirmButton';
 import { ComboText, useSignedUrls } from '../components/Fields';
 import { AlertIcon, BadgeCheckIcon, CheckCircleIcon, HourglassIcon, ImageIcon, ListIcon, SearchIcon, XCircleIcon } from '../components/Icons';
 import { Lightbox, type LightboxPhoto } from '../components/Lightbox';
@@ -26,6 +27,9 @@ const STATUS: Record<Status, { text: string; cls: string }> = {
 };
 const statusOf = (c?: VehicleInspection): Status => (!c ? 'none' : c.approved_at ? 'ok' : c.rejected_at ? 'bad' : 'wait');
 const FINAL_NOTE = 'อนุมัติแล้วจะยกเลิกหรือแก้ไขไม่ได้';
+/** second-tap text of an approve button: approval is final, so it says so (and how many items failed) */
+const approveText = (c: VehicleInspection) =>
+  `แตะอีกครั้งเพื่ออนุมัติ${c.fail_count > 0 ? ` (ไม่ผ่าน ${c.fail_count} ข้อ)` : ''} — ${FINAL_NOTE}`;
 /** quick reasons the admin can tap instead of typing */
 const QUICK_REASONS = ['ถ่ายรูปรถไม่ครบ', 'รูปไม่ชัด / ไม่ตรงกับข้อที่แจ้ง', 'หมายเหตุไม่ชัดเจน', 'รถไม่พร้อมออกงาน — แจ้งซ่อมก่อน'];
 
@@ -135,8 +139,6 @@ export function VehicleStatusPage() {
     finally { setBusy(''); }
   }
   function approve(c: VehicleInspection) {
-    const fails = c.fail_count > 0 ? `มี ${c.fail_count} ข้อไม่ผ่าน\n` : '';
-    if (!window.confirm(`อนุมัติรถ ${c.plate}?\n${fails}${FINAL_NOTE}`)) return;
     void run(c.id, () => setVehicleApproval(c.id, true), `อนุมัติรถ ${c.plate} แล้ว`);
   }
   const reject = (c: VehicleInspection, reason: string) =>
@@ -146,7 +148,6 @@ export function VehicleStatusPage() {
 
   async function approveAllClean() {
     if (!cleanPending.length) return;
-    if (!window.confirm(`อนุมัติรถที่ผ่านครบทุกข้อ ${cleanPending.length} คัน?\n${cleanPending.map((r) => r.plate).join(', ')}\n${FINAL_NOTE}`)) return;
     setBusy('all');
     let ok = 0;
     for (const r of cleanPending) { try { await setVehicleApproval(r.check!.id, true); ok++; } catch { /* reported below */ } }
@@ -202,8 +203,9 @@ export function VehicleStatusPage() {
                 </button>
               ))}
             </div>
-            <button className="btn sm" disabled={!cleanPending.length || !!busy} onClick={approveAllClean}
-              title="อนุมัติเฉพาะรถที่ตรวจครบทุกข้อและไม่มีข้อไม่ผ่าน">อนุมัติทุกคันที่ผ่าน ({cleanPending.length})</button>
+            <ConfirmButton className="btn sm" disabled={!cleanPending.length || !!busy} onConfirm={() => void approveAllClean()}
+              title={`อนุมัติเฉพาะรถที่ตรวจครบทุกข้อและไม่มีข้อไม่ผ่าน: ${cleanPending.map((r) => r.plate).join(', ')}`}
+              confirmText={`แตะอีกครั้ง: อนุมัติ ${cleanPending.length} คัน — ${FINAL_NOTE}`}>อนุมัติทุกคันที่ผ่าน ({cleanPending.length})</ConfirmButton>
           </div>
         )}
       </section>
@@ -262,7 +264,10 @@ export function VehicleStatusPage() {
                       <td>{r.check ? <span className={`pill ${r.ppeOk === r.ppeTotal ? 'p' : 'w'}`}>{r.ppeOk}/{r.ppeTotal}</span> : '–'}</td>
                       <td className="mono">{mdy(r.date)}{r.check?.inspect_time ? ` ${r.check.inspect_time.slice(0, 5)}` : ''}</td>
                       <td>
-                        {r.status === 'wait' && <button className="btn sm vs-approve" disabled={!!busy} onClick={() => approve(r.check!)}>✓ อนุมัติ</button>}
+                        {r.status === 'wait' && (
+                          <ConfirmButton className="btn sm vs-approve" disabled={!!busy} onConfirm={() => approve(r.check!)}
+                            confirmText={approveText(r.check!)}>✓ อนุมัติ</ConfirmButton>
+                        )}
                         {r.status === 'bad' && <button className="btn ghost sm" onClick={() => setOpenId(r.check!.id)}>ดูเหตุผล</button>}
                       </td>
                     </tr>
@@ -425,7 +430,9 @@ function DetailDialog({ c, ppe, busy, onClose, onApprove, onReject, onUnreject }
             <div className="row">
               {status === 'wait' && <button className="btn vs-reject" disabled={busy} onClick={() => setRejecting(true)}>✕ ไม่อนุมัติ</button>}
               {status === 'bad' && <button className="btn ghost" disabled={busy} onClick={onUnreject}>ยกเลิกไม่อนุมัติ</button>}
-              {(status === 'wait' || status === 'bad') && <button className="btn vs-approve" disabled={busy} onClick={onApprove}>✓ อนุมัติ</button>}
+              {(status === 'wait' || status === 'bad') && (
+                <ConfirmButton className="btn vs-approve" disabled={busy} onConfirm={onApprove} confirmText={approveText(c)}>✓ อนุมัติ</ConfirmButton>
+              )}
             </div>
             <button type="button" className="btn ghost" onClick={onClose}>ปิดหน้าต่าง</button>
           </div>

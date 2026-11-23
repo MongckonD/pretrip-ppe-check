@@ -7,6 +7,7 @@ import { useRef, useState } from 'react';
 import { importVehicles, isTestMode, type VehImportIn, type VehImportOut, type VehImportResult } from '../lib/api';
 import { readSheet, toCsvBom } from '../lib/sheet';
 import { downloadText, errMsg } from '../lib/utils';
+import { ConfirmButton } from './ConfirmButton';
 import { useMaster } from './MasterContext';
 import { useToast } from './Toast';
 import { DownloadIcon } from './Icons';
@@ -73,8 +74,6 @@ export function ImportVehicles() {
     if (!check) return;
     const good = rows.filter((_, i) => !check.rows[i].errors.length);
     if (!good.length) return;
-    const skip = check.summary.errors ? `\n• ข้าม ${check.summary.errors} แถวที่มีปัญหา` : '';
-    if (!window.confirm(`นำเข้า ${good.length} แถว?\n\n• รถใหม่ ${check.summary.new_vehicles} คัน · อัปเดต ${check.summary.updated_vehicles} คัน${skip}`)) return;
     setStep('importing'); setError('');
     try {
       const res = await importVehicles(good, true);
@@ -148,9 +147,10 @@ export function ImportVehicles() {
           <div className="row spread">
             <button type="button" className="btn ghost sm" onClick={reset}>{done ? 'นำเข้าไฟล์อื่น' : 'ยกเลิก'}</button>
             {!done && check && (
-              <button type="button" className="btn" disabled={step === 'importing' || check.summary.rows === check.summary.errors} onClick={run}>
+              <ConfirmButton className="btn" disabled={step === 'importing' || check.summary.rows === check.summary.errors} onConfirm={() => void run()}
+                confirmText={`แตะอีกครั้ง: รถใหม่ ${check.summary.new_vehicles} · อัปเดต ${check.summary.updated_vehicles}${check.summary.errors ? ` · ข้าม ${check.summary.errors} แถว` : ''}`}>
                 {step === 'importing' ? 'กำลังนำเข้า…' : `นำเข้า ${check.summary.rows - check.summary.errors} แถว`}
-              </button>
+              </ConfirmButton>
             )}
           </div>
         </div>

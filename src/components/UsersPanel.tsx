@@ -19,6 +19,9 @@ export function UsersPanel() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [resetFor, setResetFor] = useState<string | null>(null);
+  // permanent delete: typed confirmation shown on the page (never window.prompt — some browsers block pop-ups)
+  const [deleteFor, setDeleteFor] = useState<string | null>(null);
+  const [deleteTyped, setDeleteTyped] = useState('');
   const [resetPw, setResetPw] = useState('');
   const [form, setForm] = useState({ display_name: '', role: 'user' as Role, employee_id: '', password: '' });
   const [busy, setBusy] = useState(false);
@@ -80,18 +83,14 @@ export function UsersPanel() {
   });
   const formTaken = form.employee_id ? linkedTo.get(form.employee_id) : undefined;
 
-  /** permanent delete — the admin types the employee code (or the account id when there is none) to confirm */
-  async function remove(u: AppUser) {
-    const key = codeOf(u.employee_id) || u.id;
-    const typed = window.prompt(
-      `ลบบัญชีของ "${nameOfAcc(u)}" ถาวร — กู้คืนไม่ได้\n\n`
-      + `• ลบ: บัญชี การเข้าสู่ระบบ ความยินยอม และใบขับขี่ (รวมรูป) ของบัญชีนี้\n`
-      + `• ยังอยู่: บันทึกตรวจรถ / PPE / เวลาทำงาน แต่จะไม่แสดงว่าบัญชีนี้เป็นผู้บันทึก\n`
-      + `ถ้าแค่ไม่ให้เข้าใช้ ให้กดปุ่ม "ใช้งาน" เพื่อปิดบัญชีแทน\n\n`
-      + `พิมพ์ ${key} เพื่อยืนยันการลบ`,
-    );
-    if (typed === null) return;
-    if (typed.replace(/\s+/g, '').toUpperCase() !== key.toUpperCase()) return toast('พิมพ์ไม่ตรง — ยังไม่ได้ลบ');
+  /** permanent delete — the admin types the employee code (or the account id when there is none) in the box shown below */
+  const deleteKey = (u: AppUser) => codeOf(u.employee_id) || u.id;
+  const typedOk = (u: AppUser) => deleteTyped.replace(/\s+/g, '').toUpperCase() === deleteKey(u).toUpperCase();
+  async function remove(u: AppUser, e?: FormEvent) {
+    e?.preventDefault();
+    if (!typedOk(u)) return toast('พิมพ์ไม่ตรง — ยังไม่ได้ลบ');
+    setDeleteFor(null);
+    setDeleteTyped('');
     await run(() => deleteUser(u.id), `ลบบัญชีของ ${nameOfAcc(u)} แล้ว`);
   }
 
@@ -213,8 +212,29 @@ export function UsersPanel() {
         <div className="user-actions">
           {u.locked && <button className="btn ghost sm" onClick={() => run(() => updateUser(u.id, { unlock: true }), 'ปลดล็อกแล้ว')}>ปลดล็อก</button>}
           <button className="btn ghost sm" onClick={() => { setResetFor(u.id); setResetPw(''); }}>ตั้งรหัสผ่านใหม่</button>
-          {u.id !== me?.id && <button className="btn danger sm" onClick={() => remove(u)}>ลบผู้ใช้</button>}
+          {u.id !== me?.id && (
+            <button className="btn danger sm" aria-expanded={deleteFor === u.id}
+              onClick={() => { setDeleteFor(deleteFor === u.id ? null : u.id); setDeleteTyped(''); setResetFor(null); }}>ลบผู้ใช้</button>
+          )}
         </div>
+        {deleteFor === u.id && (
+          <form className="user-delete" onSubmit={(e) => remove(u, e)}>
+            <b>ลบบัญชีของ "{nameOfAcc(u)}" ถาวร — กู้คืนไม่ได้</b>
+            <ul>
+              <li>ลบ: บัญชี การเข้าสู่ระบบ ความยินยอม และใบขับขี่ (รวมรูป) ของบัญชีนี้</li>
+              <li>ยังอยู่: บันทึกตรวจรถ / PPE / เวลาทำงาน แต่จะไม่แสดงว่าบัญชีนี้เป็นผู้บันทึก</li>
+              <li>ถ้าแค่ไม่ให้เข้าใช้ ให้ปิด "สถานะบัญชี" แทน</li>
+            </ul>
+            <label>พิมพ์ <b className="mono">{deleteKey(u)}</b> เพื่อยืนยันการลบ
+              <input type="text" value={deleteTyped} onChange={(e) => setDeleteTyped(e.target.value)} autoComplete="off" autoFocus
+                aria-label={`พิมพ์ ${deleteKey(u)} เพื่อยืนยันการลบ`} />
+            </label>
+            <div className="row">
+              <button className="btn danger sm" type="submit" disabled={!typedOk(u)}>ลบถาวร</button>
+              <button className="btn ghost sm" type="button" onClick={() => { setDeleteFor(null); setDeleteTyped(''); }}>ยกเลิก</button>
+            </div>
+          </form>
+        )}
         {resetFor === u.id && (
           <form className="row user-reset" onSubmit={doReset}>
             <input type="text" aria-label="รหัสผ่านใหม่" placeholder="รหัสผ่านใหม่ (8 ตัวขึ้นไป)" value={resetPw}

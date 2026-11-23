@@ -14,6 +14,7 @@
  * Only shown when the storeDelivery feature switch is on.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmButton } from '../components/ConfirmButton';
 import { DownloadIcon, PinIcon } from '../components/Icons';
 import { useMaster } from '../components/MasterContext';
 import { useToast } from '../components/Toast';
@@ -178,8 +179,6 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
 
   async function applyImport(mode: 'replace' | 'append') {
     if (!preview) return;
-    const days = preview.replace.summary.dates.map((x) => thaiDate(x.date)).join(', ');
-    if (mode === 'replace' && preview.append && !window.confirm(`รายการเดิมของวันที่ในไฟล์ (${days}) จะถูกแทนที่ด้วยไฟล์นี้ — ทำต่อไหม?`)) return;
     setBusy(true);
     try {
       const r = await importDeliveryPlan(date, mode, preview.rows, true);
@@ -210,11 +209,9 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
   }
 
   async function remove(s: DeliveryStop) {
-    if (!window.confirm(`เอา ${s.name} ออกจากรถ ${s.plate} ของวันที่ ${thaiDate(date)}?`)) return;
     try { await removeDeliveryStop(s.id); await load(); } catch (e) { toast('ลบไม่สำเร็จ: ' + errMsg(e)); }
   }
   async function clearDay() {
-    if (!window.confirm(`ล้างรายการร้านค้าที่ต้องส่งของวันที่ ${thaiDate(date)} ทั้งหมด (${list.length} ร้าน)?`)) return;
     try { await clearDeliveryPlan(date); await load(); toast('ล้างรายการของวันนี้แล้ว'); } catch (e) { toast('ล้างไม่สำเร็จ: ' + errMsg(e)); }
   }
 
@@ -288,8 +285,15 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
             <span className="note">ถ้าเพิ่มต่อ: {pv.append.summary.already} ร้านอยู่ในรถคันเดิมแล้ว — เพิ่มเฉพาะบิลใหม่ของร้านนั้น</span>
           )}
           <div className="row">
-            <button type="button" className="btn sm" disabled={busy || fileErrors.length > 0} onClick={() => applyImport('replace')}>
-              {pv.append ? 'ใช้แทนรายการเดิมของวันที่ในไฟล์' : 'นำเข้ารายการนี้'}</button>
+            {/* replacing days that may already have a plan: tap twice (no pop-up) */}
+            {pv.append ? (
+              <ConfirmButton className="btn sm" disabled={busy || fileErrors.length > 0} onConfirm={() => applyImport('replace')}
+                confirmText={`แตะอีกครั้ง: แทนที่รายการเดิมของ ${pv.replace.summary.dates.map((x) => thaiDate(x.date)).join(', ')}`}>
+                ใช้แทนรายการเดิมของวันที่ในไฟล์
+              </ConfirmButton>
+            ) : (
+              <button type="button" className="btn sm" disabled={busy || fileErrors.length > 0} onClick={() => applyImport('replace')}>นำเข้ารายการนี้</button>
+            )}
             {pv.append && (
               <button type="button" className="btn ghost sm" disabled={busy || fileErrors.length > 0 || appendErrors.length > 0}
                 onClick={() => applyImport('append')}>เพิ่มต่อจากรายการเดิม</button>
@@ -364,7 +368,9 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
                         )}
                       </span>
                       <span className="mono plan-cases">{casesText(s.cases)}<small> ลัง</small></span>
-                      {!locked && <button type="button" className="btn ghost sm plan-del" onClick={() => remove(s)} aria-label={`ลบ ${s.name}`}>✕</button>}
+                      {!locked && (
+                        <ConfirmButton className="btn ghost sm plan-del" onConfirm={() => remove(s)} ariaLabel={`ลบ ${s.name}`} confirmText="ลบ?">✕</ConfirmButton>
+                      )}
                     </li>
                   ))}
                 </ul>}
@@ -376,7 +382,8 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
       {list.length > 0 && open && !locked && (
         <div className="row plan-foot">
           <span />
-          <button type="button" className="btn danger sm" onClick={clearDay}>ล้างรายการของวันนี้ทั้งหมด</button>
+          <ConfirmButton className="btn danger sm" onConfirm={clearDay}
+            confirmText={`แตะอีกครั้งเพื่อล้างทั้ง ${list.length} ร้านของ ${thaiDate(date)}`}>ล้างรายการของวันนี้ทั้งหมด</ConfirmButton>
         </div>
       )}
     </section>

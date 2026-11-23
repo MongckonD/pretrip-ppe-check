@@ -13,6 +13,7 @@ import { importEmployees, isTestMode, type ImportResult, type ImportRowIn, type 
 import { readSheet, toCsvBom } from '../lib/sheet';
 import { downloadText, errMsg, today } from '../lib/utils';
 import { CfgHead } from './CfgUi';
+import { ConfirmButton } from './ConfirmButton';
 import { ImportVehicles } from './ImportVehicles';
 import { DownloadIcon, TableIcon } from './Icons';
 import { useMaster } from './MasterContext';
@@ -104,7 +105,6 @@ export function ImportEmployees() {
     if (!check) return;
     const good = rows.filter((_, i) => !check.rows[i].errors.length);
     if (!good.length) return;
-    if (!window.confirm(`นำเข้า ${good.length} แถว?\n\n• พนักงานใหม่ ${check.summary.new_employees} คน · อัปเดต ${check.summary.updated_employees} คน\n• สร้างบัญชีใหม่ ${check.summary.new_accounts} บัญชี (ต้องตั้งรหัสผ่านใหม่ตอนเข้าครั้งแรก)\n${check.summary.errors ? `• ข้าม ${check.summary.errors} แถวที่มีปัญหา\n` : ''}`)) return;
     setStep('importing'); setProgress(0); setError('');
     const size = check.chunk ?? 10;
     const out: ImportRowOut[] = [];
@@ -179,9 +179,11 @@ export function ImportEmployees() {
             <ResultTable rows={check.rows} />
             <div className="row spread">
               <button type="button" className="btn ghost sm" onClick={reset}>ยกเลิก</button>
-              <button type="button" className="btn" disabled={step === 'importing' || check.summary.rows === check.summary.errors} onClick={run}>
+              {/* tap twice (no pop-up): the second tap text says what will happen */}
+              <ConfirmButton className="btn" disabled={step === 'importing' || check.summary.rows === check.summary.errors} onConfirm={() => void run()}
+                confirmText={`แตะอีกครั้ง: พนักงานใหม่ ${check.summary.new_employees} · อัปเดต ${check.summary.updated_employees} · บัญชีใหม่ ${check.summary.new_accounts}${check.summary.errors ? ` · ข้าม ${check.summary.errors} แถว` : ''}`}>
                 {step === 'importing' ? `กำลังนำเข้า… ${progress}/${check.summary.rows - check.summary.errors}` : `นำเข้า ${check.summary.rows - check.summary.errors} แถว`}
-              </button>
+              </ConfirmButton>
             </div>
           </div>
         )}

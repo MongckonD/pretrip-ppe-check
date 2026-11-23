@@ -8,6 +8,7 @@
  * Start and end are stamped by the server (trip_activities.work_started_at / work_ended_at), one record per vehicle per day.
  */
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { ConfirmButton } from '../components/ConfirmButton';
 import { ReadOnlyField, thaiDay, useNow } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { CheckPicker, NoCheckYet, useTodayChecks } from '../components/TodayChecks';
@@ -69,7 +70,6 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
 
   async function finish() {
     if (!trip) return;
-    if (!window.confirm('จบงานและหยุดเวลาทำงานของวันนี้? กดแล้วแก้ไขไม่ได้')) return;
     setBusy(true);
     try { await endWork(trip.id); toast('จบงานแล้ว บันทึกเวลาทำงานเรียบร้อย'); await reload(); }
     catch (e) { toast('จบงานไม่สำเร็จ: ' + errMsg(e)); }
@@ -125,7 +125,9 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
               <b>{hms(Math.max(0, Math.floor((Date.now() - Date.parse(trip.work_started_at)) / 1000)))}</b>
               <span>เริ่มเมื่อ {trip.start_time} น.</span>
             </div>
-            <button className="btn work-btn end" type="button" disabled={busy} onClick={finish}>■ จบงาน / หยุดเวลาทำงาน</button>
+            {/* tap twice (never a pop-up: some browsers block them and answer "no" silently) */}
+            <ConfirmButton className="btn work-btn end" disabled={busy} onConfirm={finish}
+              confirmText="แตะอีกครั้งเพื่อจบงาน — แก้ไขไม่ได้">■ จบงาน / หยุดเวลาทำงาน</ConfirmButton>
           </>
         ) : (
           <div className="work-done">
