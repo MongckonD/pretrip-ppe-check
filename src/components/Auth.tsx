@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, type FormEvent, type ReactNode } from 'react';
 import { changePassword, login, setupAdmin, type Me } from '../lib/api';
 import { errMsg } from '../lib/utils';
+import { APP_VERSION } from '../lib/features';
 
 /** The signed-in user (null in test mode). */
 export const MeContext = createContext<Me | null>(null);
@@ -67,6 +68,7 @@ export function LoginForm({ onDone, notice }: { onDone: (me: Me) => void; notice
         {error && <div className="form-error" role="alert">{error}</div>}
         <button className="btn" type="submit" disabled={busy}>{busy ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}</button>
         <p className="note">ลืมรหัสผ่าน ติดต่อผู้ดูแลระบบเพื่อตั้งรหัสใหม่</p>
+        <p className="login-ver">เวอร์ชัน {APP_VERSION}</p>
       </form>
     </Card>
   );
