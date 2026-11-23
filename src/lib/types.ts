@@ -124,3 +124,28 @@ export interface PpeForm {
 
 /** which records to list: one day, one month, or a date range (from–to, inclusive) */
 export interface ListOpts { date?: string; month?: string; from?: string; to?: string }
+
+/* ---------- ร้านค้าที่ต้องส่ง (delivery plan, feature switch storeDelivery) ---------- */
+export interface DeliveryBill { bill_no: string; cases: number | null }
+/** one store on one day (one vehicle only); cases = the sum of its bills */
+export interface DeliveryStop {
+  id: string; plate: string; code: string; name: string; type: string; address: string;
+  bills: DeliveryBill[]; cases: number | null;
+}
+/** a row of the SAP file as the browser read it; date = delivery date YYYY-MM-DD ('' = the date chosen on the page) */
+export interface DeliveryRowIn { line: number; date: string; plate: string; code: string; name: string; type: string; address: string; cases: string; bill: string }
+export interface DeliveryImportStop {
+  date: string; lines: number[]; plate: string; code: string; name: string; type: string; address: string; bills: DeliveryBill[];
+  /** append: the store is already on this vehicle that day (only new bills are added) */
+  existing: boolean;
+  new_store: boolean;
+}
+export interface DeliveryImportResult {
+  stops: DeliveryImportStop[]; errors: string[]; notes: string[];
+  summary: {
+    stores: number; vehicles: number; bills: number; cases: number; new_stores: number; already: number;
+    /** per delivery date in the file */
+    dates: { date: string; stores: number; vehicles: number; bills: number; cases: number }[];
+  };
+}
+export interface DeliveryAddIn { date: string; plate: string; code: string; name: string; type: string; cases: string; bill: string }

@@ -58,6 +58,8 @@ export function mapDbError(e: unknown): HttpError | null {
   if (msg.includes('UNIQUE constraint failed: vehicle_inspections')) return conflict('รถคันนี้มีบันทึกการตรวจของวันนี้แล้ว');
   if (msg.includes('UNIQUE constraint failed: ppe_inspections')) return conflict('พนักงานคนนี้มีบันทึก PPE ของวันนี้แล้ว');
   if (msg.includes('UNIQUE constraint failed: vehicle_inspection_photos.r2_key')) return conflict('รูปนี้ถูกใช้ในบันทึกอื่นแล้ว');
+  if (msg.includes('delivery_bills.bill_no') || msg.includes('delivery_bills_bill_uq')) return conflict('เลขที่บิลนี้มีอยู่ในแผนส่งแล้ว — บิลหนึ่งใบส่งได้ครั้งเดียว');
+  if (msg.includes('delivery_plan.plan_date') || msg.includes('delivery_plan_day_store_uq')) return conflict('ร้านนี้อยู่ในแผนส่งของวันนี้แล้ว (ร้านเดียวกันส่งได้คันเดียว) — โหลดรายการใหม่แล้วลองอีกครั้ง');
   if (msg.includes('UNIQUE constraint failed: vehicles')) return conflict('ทะเบียนนี้มีอยู่แล้ว');
   if (msg.includes('UNIQUE constraint failed: employees.emp_code')) return conflict('รหัสพนักงานนี้ใช้กับพนักงานคนอื่นแล้ว');
   if (msg.includes('UNIQUE constraint failed: users.employee_id')) return conflict('พนักงานคนนี้ผูกกับบัญชีอื่นอยู่แล้ว — พนักงาน 1 คนมีได้บัญชีเดียว');

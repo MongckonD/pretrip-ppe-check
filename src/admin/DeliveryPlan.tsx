@@ -1,57 +1,39 @@
 /**
- * Admin home → "ร้านค้าที่ต้องส่ง": the stores each vehicle must deliver to on the chosen day.
- *   - import the day's delivery list exported from SAP (Excel .xlsx or CSV), or add stores one by one
- *   - grouped by vehicle, in delivery order; remove a store, or clear the day
- *
- * TRIAL (design only): kept in this browser (localStorage, per day) — NOT in the database yet, so the staff
- * phones do not see it. The tables come after the database design is agreed; then the staff store picker
- * (บันทึกเวลาส่งสินค้า) will show the vehicle's list for the day.
+ * Admin home → "ร้านค้าที่ต้องส่ง": the stores each vehicle must deliver to on the chosen day (database:
+ * stores · delivery_plan · delivery_bills, see worker/delivery-routes.ts). Staff see their vehicle's list under
+ * Time activities → ร้านค้าที่ต้องส่ง.
+ *   - import the list exported from SAP (Excel .xlsx or CSV): each row has its own delivery date (วันที่ส่ง; blank =
+ *     the date shown on this block), so one file may hold several days. The server checks the file first (preview),
+ *     then replaces every date in the file or appends to it; stores new to the system are created (by SAP code)
+ *   - its own date picker (today, tomorrow, …) to plan ahead; past days are view only (locked)
+ *   - or add one store by hand (SAP code required, so the same store is always recognised)
+ *   - one row per vehicle; "ดูรายละเอียด" lists its stores in file order, with their bills; remove a store, clear the day
+ * Rules (enforced by the server and the database): a store is on ONE vehicle per day; several bills of the same
+ * store on the same vehicle stay one stop with several bills; a bill number is one delivery only (never on two
+ * stores or days); past days cannot be changed.
+ * Only shown when the storeDelivery feature switch is on.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DownloadIcon, PinIcon } from '../components/Icons';
 import { useMaster } from '../components/MasterContext';
 import { useToast } from '../components/Toast';
+import { addDeliveryStop, clearDeliveryPlan, importDeliveryPlan, listDeliveryPlan, removeDeliveryStop } from '../lib/api';
 import { readSheet, toCsvBom } from '../lib/sheet';
 import { STORE_TYPES, storeTypeName, type StoreType } from '../lib/storeVisit';
-import { downloadText, errMsg } from '../lib/utils';
-import { DownloadIcon } from '../components/Icons';
-
-export interface PlanStop {
-  id: string; plate: string; seq: number;
-  store_code: string; store_name: string; store_type: StoreType | '';
-  address: string; cases: number | null; bill_no: string;
-}
-
-const KEY = 'delivery-plan-trial-v1';
-type Saved = Record<string, PlanStop[]>; // date → stops
-function loadAll(): Saved {
-  let saved: Saved;
-  try { saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Saved; } catch { return {}; }
-  // lists saved before the one-store-one-vehicle rule may hold repeats: keep the first one added, drop the rest
-  for (const d of Object.keys(saved)) saved[d] = dedupe(saved[d] ?? []);
-  return saved;
-}
-/** drops a store already in the list (same or other vehicle), then numbers each vehicle's stops 1, 2, 3… */
-function dedupe(list: PlanStop[]): PlanStop[] {
-  const kept: PlanStop[] = [];
-  for (const s of list) if (!kept.some((k) => sameStore(k, s))) kept.push(s);
-  const n = new Map<string, number>();
-  return [...kept].sort((a, b) => a.plate.localeCompare(b.plate) || a.seq - b.seq)
-    .map((s) => { const k = (n.get(s.plate) ?? 0) + 1; n.set(s.plate, k); return { ...s, seq: k }; });
-}
-function saveAll(s: Saved) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage unavailable */ } }
-const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
+import type { DeliveryImportResult, DeliveryRowIn, DeliveryStop } from '../lib/types';
+import { downloadText, errMsg, today } from '../lib/utils';
 
 /* ---- file columns (Thai / English / common SAP names) ---- */
-type Field = 'plate' | 'seq' | 'code' | 'name' | 'type' | 'address' | 'cases' | 'bill';
+type Field = 'date' | 'plate' | 'code' | 'name' | 'type' | 'address' | 'cases' | 'bill';
 const HEAD: Record<Field, string> = {
-  plate: 'ทะเบียนรถ', seq: 'ลำดับ', code: 'รหัสร้าน', name: 'ชื่อร้าน', type: 'ประเภทร้าน',
-  address: 'ที่อยู่', cases: 'จำนวนลัง', bill: 'เลขที่บิล',
+  date: 'วันที่ส่ง', plate: 'ทะเบียนรถ', code: 'รหัสร้าน (Ship-to)', name: 'ชื่อร้าน', type: 'ประเภทร้าน', address: 'ที่อยู่', cases: 'จำนวนลัง', bill: 'เลขที่บิล',
 };
 const ALIASES: Record<Field, string[]> = {
+  date: ['วันที่ส่ง', 'วันส่ง', 'วันที่จัดส่ง', 'วันที่', 'deliverydate', 'date', 'plandate', 'shipdate', 'gidate', 'goodsissuedate', 'loadingdate'],
   plate: ['ทะเบียนรถ', 'ทะเบียน', 'plate', 'vehicle', 'vehicleno', 'truck', 'licenseplate'],
-  seq: ['ลำดับ', 'ลำดับส่ง', 'seq', 'sequence', 'stop', 'stopno', 'item'],
-  code: ['รหัสร้าน', 'รหัสลูกค้า', 'customer', 'customerno', 'customercode', 'soldto', 'shipto', 'kunnr'],
-  name: ['ชื่อร้าน', 'ชื่อลูกค้า', 'ร้าน', 'customername', 'name', 'shiptoname', 'storename'],
+  // first = preferred: the delivery point (Ship-to) wins over the buyer (Sold-to / Customer) when a file has both
+  code: ['รหัสร้านshipto', 'รหัสร้าน', 'shipto', 'shiptoparty', 'รหัสลูกค้า', 'customer', 'customerno', 'customercode', 'kunnr', 'soldto', 'soldtoparty'],
+  name: ['ชื่อร้าน', 'shiptoname', 'shiptopartyname', 'ชื่อลูกค้า', 'ร้าน', 'storename', 'customername', 'name', 'soldtoname'],
   type: ['ประเภทร้าน', 'ประเภท', 'type', 'customertype', 'channel'],
   address: ['ที่อยู่', 'address', 'street', 'city'],
   cases: ['จำนวนลัง', 'ลัง', 'cases', 'qty', 'quantity', 'cs'],
@@ -59,288 +41,342 @@ const ALIASES: Record<Field, string[]> = {
 };
 const key = (s: string) => s.toLowerCase().replace(/[\s._\-()/:]/g, '');
 const fieldOf = (h: string) => (Object.keys(ALIASES) as Field[]).find((f) => ALIASES[f].some((a) => key(a) === key(h))) ?? null;
+/** header row → column of each field; when several columns fit one field, the one with the more preferred name wins */
+function columnsOf(header: string[]): Partial<Record<Field, number>> {
+  const out: Partial<Record<Field, number>> = {};
+  const rank: Partial<Record<Field, number>> = {};
+  header.forEach((h, j) => {
+    for (const f of Object.keys(ALIASES) as Field[]) {
+      const r = ALIASES[f].findIndex((a) => key(a) === key(String(h ?? '')));
+      if (r >= 0 && (rank[f] === undefined || r < rank[f]!)) { rank[f] = r; out[f] = j; }
+    }
+  });
+  return out;
+}
+/** store type from the file (Thai / English name or code) → our code; unknown → '' */
 const typeOf = (v: string): StoreType | '' => {
   const k = key(v);
   return STORE_TYPES.find((t) => key(t.name) === k || key(t.en) === k || key(t.code) === k)?.code ?? '';
 };
-const plateKey = (p: string) => p.replace(/[\s.-]/g, '').toUpperCase();
-
 /**
- * One store = one stop per day, on ONE vehicle (two trucks never go to the same store).
- * Same store: same SAP code when both have one; otherwise the same name (spaces / case / dots ignored).
+ * Delivery date from the file → YYYY-MM-DD. Accepts 2026-11-24 · 24.11.2026 (SAP) · 24/11/2026 · 24/11/69 · 20261124 ·
+ * Thai (Buddhist) years (2569) · Excel date numbers. Anything else is sent as typed so the server reports the row.
  */
-const codeKey = (c: string) => c.replace(/[\s.-]/g, '').toUpperCase();
-const nameKey = (n: string) => n.toLowerCase().replace(/[\s.\-,()'"]/g, '');
-const sameStore = (a: { store_code: string; store_name: string }, b: { store_code: string; store_name: string }) => {
-  const ca = codeKey(a.store_code), cb = codeKey(b.store_code);
-  return ca && cb ? ca === cb : nameKey(a.store_name) === nameKey(b.store_name);
-};
-const storeLabel = (s: { store_code: string; store_name: string }) => (s.store_code ? `${s.store_name} (${s.store_code})` : s.store_name);
+export function parseDeliveryDate(v: string): string {
+  const t = v.trim();
+  if (!t) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const iso = (y: number, m: number, d: number) => {
+    let yy = y < 100 ? (y > 50 ? 2500 + y : 2000 + y) : y; // 2-digit years: 69 → 2569, 26 → 2026
+    if (yy > 2400) yy -= 543; // Thai (Buddhist) year
+    const out = `${yy}-${pad(m)}-${pad(d)}`;
+    const ok = !Number.isNaN(Date.parse(`${out}T00:00:00Z`)) && new Date(`${out}T00:00:00Z`).toISOString().slice(0, 10) === out;
+    return ok ? out : t;
+  };
+  let m = t.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (m) return iso(+m[1], +m[2], +m[3]);
+  m = t.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (m) return iso(+m[3], +m[2], +m[1]);
+  m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return iso(+m[1], +m[2], +m[3]);
+  if (/^\d{5}(\.\d+)?$/.test(t)) { // Excel serial day number
+    return new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(t)) * 86_400_000).toISOString().slice(0, 10);
+  }
+  return t;
+}
+const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const thaiDate = (d: string) => new Date(`${d}T00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const typeName = (t: string) => (t ? storeTypeName(t as StoreType) : '');
+const casesText = (n: number | null) => (n === null ? '–' : n.toLocaleString('th-TH'));
+const sumCases = (list: { cases: number | null }[]) =>
+  (list.some((x) => x.cases !== null) ? list.reduce((n, x) => n + (x.cases ?? 0), 0) : null);
 
-export function DeliveryPlan({ date }: { date: string }) {
+interface Preview { file: string; rows: DeliveryRowIn[]; replace: DeliveryImportResult; append: DeliveryImportResult | null; typeNotes: string[] }
+
+export function DeliveryPlan({ date: pageDate }: { date: string }) {
   const { vehicles } = useMaster();
+  // own delivery date: starts on the home page's date, can go ahead (tomorrow …) to plan; past days are view only
+  const [date, setDate] = useState(pageDate);
+  useEffect(() => { setDate(pageDate); }, [pageDate]);
+  const locked = date < today();
+  const tomorrow = addDays(today(), 1);
   const toast = useToast();
-  const [all, setAll] = useState<Saved>(loadAll);
-  useEffect(() => { saveAll(all); }, [all]);
-  const stops = useMemo(() => all[date] ?? [], [all, date]);
-  const setStops = (f: (s: PlanStop[]) => PlanStop[]) => setAll((a) => ({ ...a, [date]: f(a[date] ?? []) }));
+  const [stops, setStops] = useState<DeliveryStop[] | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState<{ file: string; rows: PlanStop[]; problems: string[]; errors: string[] } | null>(null);
-  const [addErr, setAddErr] = useState('');
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ plate: '', name: '', code: '', type: '' as StoreType | '', cases: '' });
+  const [addErr, setAddErr] = useState('');
+  const [form, setForm] = useState({ plate: '', name: '', code: '', type: '' as StoreType | '', cases: '', bill: '' });
   const [open, setOpen] = useState(true);
   const [openPlates, setOpenPlates] = useState<Set<string>>(new Set()); // vehicles whose store list is shown
 
-  const knownPlate = (p: string) => vehicles.find((v) => v.active && plateKey(v.plate) === plateKey(p))?.plate;
+  const load = useCallback(async () => {
+    setError('');
+    try { setStops(await listDeliveryPlan(date)); } catch (e) { setStops([]); setError(errMsg(e)); }
+  }, [date]);
+  useEffect(() => { setStops(null); setPreview(null); load(); }, [load]);
+  // the browser-only trial kept its list here; the database replaces it
+  useEffect(() => { try { localStorage.removeItem('delivery-plan-trial-v1'); } catch { /* ignore */ } }, []);
+
+  const list = useMemo(() => stops ?? [], [stops]);
   const byPlate = useMemo(() => {
-    const m = new Map<string, PlanStop[]>();
-    for (const s of [...stops].sort((a, b) => a.plate.localeCompare(b.plate) || a.seq - b.seq)) m.set(s.plate, [...(m.get(s.plate) ?? []), s]);
+    const m = new Map<string, DeliveryStop[]>();
+    for (const s of list) m.set(s.plate, [...(m.get(s.plate) ?? []), s]);
     return [...m.entries()];
-  }, [stops]);
-  const totalCases = stops.reduce((n, s) => n + (s.cases ?? 0), 0);
+  }, [list]);
+  const totalCases = sumCases(list);
+  const totalBills = list.reduce((n, s) => n + s.bills.length, 0);
 
   function template() {
     downloadText('delivery-plan-template.csv', toCsvBom([
-      [HEAD.plate, HEAD.seq, HEAD.code, HEAD.name, HEAD.type, HEAD.address, HEAD.cases, HEAD.bill],
-      [vehicles[0]?.plate ?? '1กก 1234', 1, 'C10021', 'ร้านเจ๊หมวย ขายส่ง', 'ร้านขายส่ง', '45/2 ถ.เพชรเกษม', 120, '9000123456'],
-      [vehicles[0]?.plate ?? '1กก 1234', 2, 'C10045', 'ครัวคุณต๋อย', 'ร้านอาหาร', '88 ถ.กาญจนาภิเษก', 15, '9000123457'],
+      [HEAD.date, HEAD.plate, HEAD.code, HEAD.name, HEAD.type, HEAD.address, HEAD.cases, HEAD.bill],
+      [tomorrow, vehicles[0]?.plate ?? '1กก 1234', 'C10021', 'ร้านเจ๊หมวย ขายส่ง', 'ร้านขายส่ง', '45/2 ถ.เพชรเกษม', 80, '9000123456'],
+      [tomorrow, vehicles[0]?.plate ?? '1กก 1234', 'C10021', 'ร้านเจ๊หมวย ขายส่ง', 'ร้านขายส่ง', '45/2 ถ.เพชรเกษม', 40, '9000123457'],
+      [tomorrow, vehicles[0]?.plate ?? '1กก 1234', 'C10045', 'ครัวคุณต๋อย', 'ร้านอาหาร', '88 ถ.กาญจนาภิเษก', 15, '9000123458'],
     ]), 'text/csv;charset=utf-8');
   }
 
+  /** read the file, then let the server check it (nothing is saved yet) */
   async function pick(file: File) {
+    setBusy(true);
     try {
       const sheet = await readSheet(file);
       const h = sheet.slice(0, 10).findIndex((r) => r.some((c) => fieldOf(c) === 'name'));
       if (h < 0) throw new Error(`ไม่พบหัวคอลัมน์ "${HEAD.name}" ในไฟล์ — ใช้ไฟล์ตัวอย่างเป็นแบบ`);
-      const cols = sheet[h].map(fieldOf);
-      const rows: PlanStop[] = [];
-      const problems: string[] = [];
-      const errors: string[] = [];
-      const seqOf = new Map<string, number>();
+      const col = columnsOf(sheet[h]);
+      const missing = (['plate', 'code', 'name'] as Field[]).filter((f) => col[f] === undefined).map((f) => `"${HEAD[f]}"`);
+      if (missing.length) throw new Error(`ไม่พบหัวคอลัมน์ ${missing.join(', ')} ในไฟล์ — ใช้ไฟล์ตัวอย่างเป็นแบบ`);
+      const typeNotes: string[] = [];
+      const rows: DeliveryRowIn[] = [];
       sheet.slice(h + 1).forEach((r, i) => {
         if (!r.some((c) => String(c ?? '').trim())) return;
-        const get = (f: Field) => { const j = cols.indexOf(f); return j >= 0 ? String(r[j] ?? '').trim() : ''; };
+        const get = (f: Field) => { const j = col[f]; return j !== undefined ? String(r[j] ?? '').trim() : ''; };
         const line = h + i + 2;
-        const name = get('name');
-        const plateIn = get('plate');
-        if (!name) { problems.push(`แถว ${line}: ไม่มีชื่อร้าน — ข้าม`); return; }
-        if (!plateIn) { problems.push(`แถว ${line}: ${name} ไม่มีทะเบียนรถ — ข้าม`); return; }
-        const p = knownPlate(plateIn) ?? plateIn;
-        const seq = Number(get('seq')) || (seqOf.get(p) ?? 0) + 1;
-        seqOf.set(p, Math.max(seq, seqOf.get(p) ?? 0));
-        const cases = get('cases') ? Number(get('cases').replace(/[^\d.]/g, '')) : null;
         const t = get('type');
-        if (t && !typeOf(t)) problems.push(`แถว ${line}: ประเภทร้าน "${t}" ไม่รู้จัก — เว้นว่างไว้`);
-        const row: PlanStop = { id: uid(), plate: p, seq, store_code: get('code'), store_name: name, store_type: t ? typeOf(t) : '',
-          address: get('address'), cases: cases !== null && Number.isFinite(cases) ? cases : null, bill_no: get('bill') };
-        const prev = rows.find((x) => sameStore(x, row));
-        if (prev && prev.plate !== p) {
-          // the same store on two vehicles: never allowed — the file must be fixed
-          errors.push(`แถว ${line}: ${storeLabel(row)} อยู่ทั้งรถ ${prev.plate} และรถ ${p} — ร้านเดียวกันส่งได้คันเดียว`);
-          return;
-        }
-        if (prev) {
-          // the same store again on the same vehicle (e.g. one row per bill in SAP): one stop, cases and bills added up
-          prev.cases = prev.cases === null && row.cases === null ? null : (prev.cases ?? 0) + (row.cases ?? 0);
-          prev.bill_no = [prev.bill_no, row.bill_no].filter(Boolean).join(', ');
-          prev.store_code ||= row.store_code; prev.store_type ||= row.store_type; prev.address ||= row.address;
-          problems.push(`แถว ${line}: ${storeLabel(row)} ซ้ำในรถ ${p} — รวมเป็นจุดส่งเดียว`);
-          return;
-        }
-        rows.push(row);
+        if (t && !typeOf(t)) typeNotes.push(`แถว ${line}: ประเภทร้าน "${t}" ไม่รู้จัก — เว้นว่างไว้`);
+        rows.push({ line, date: parseDeliveryDate(get('date')), plate: get('plate'), code: get('code'), name: get('name'), type: t ? typeOf(t) : '',
+          address: get('address'), cases: get('cases'), bill: get('bill') });
       });
-      if (!rows.length && !errors.length) throw new Error('ไฟล์ไม่มีร้านค้าที่นำเข้าได้');
-      // delivery order per vehicle as 1, 2, 3… (merged repeats leave no gaps)
-      const n = new Map<string, number>();
-      rows.sort((a, b) => a.plate.localeCompare(b.plate) || a.seq - b.seq)
-        .forEach((r) => { const k = (n.get(r.plate) ?? 0) + 1; n.set(r.plate, k); r.seq = k; });
-      setPreview({ file: file.name, rows, problems, errors });
+      if (!rows.length) throw new Error('ไฟล์ไม่มีแถวข้อมูล');
+      // append is offered when the day(s) in the file may already have a plan
+      const otherDays = rows.some((r) => r.date && r.date !== date);
+      const [replace, append] = await Promise.all([
+        importDeliveryPlan(date, 'replace', rows, false),
+        list.length || otherDays ? importDeliveryPlan(date, 'append', rows, false) : Promise.resolve(null),
+      ]);
+      setPreview({ file: file.name, rows, replace, append, typeNotes });
     } catch (e) {
       toast('อ่านไฟล์ไม่สำเร็จ: ' + errMsg(e));
     } finally {
+      setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
     }
   }
 
-  /** appending the file to today's list: stores already on another vehicle block it; already on the same vehicle are skipped */
-  const vsToday = useMemo(() => {
-    if (!preview) return { clash: [] as string[], already: [] as PlanStop[] };
-    const clash: string[] = [];
-    const already: PlanStop[] = [];
-    for (const r of preview.rows) {
-      const s = stops.find((x) => sameStore(x, r));
-      if (!s) continue;
-      if (s.plate === r.plate) already.push(r);
-      else clash.push(`${storeLabel(r)}: ในไฟล์อยู่รถ ${r.plate} แต่วันนี้อยู่ในรถ ${s.plate} แล้ว`);
-    }
-    return { clash, already };
-  }, [preview, stops]);
-
-  function applyImport(mode: 'replace' | 'append') {
-    if (!preview || preview.errors.length) return;
-    if (mode === 'append' && vsToday.clash.length) return;
-    const skip = new Set(vsToday.already.map((r) => r.id));
-    const rows = mode === 'replace' ? preview.rows : preview.rows.filter((r) => !skip.has(r.id));
-    setStops((cur) => {
-      if (mode === 'replace') return rows;
-      // same vehicle: the new stores go after the ones it already has (seq continues, file order kept)
-      const last = new Map<string, number>();
-      for (const s of cur) last.set(s.plate, Math.max(s.seq, last.get(s.plate) ?? 0));
-      const added = [...rows].sort((a, b) => a.plate.localeCompare(b.plate) || a.seq - b.seq).map((s) => {
-        const seq = (last.get(s.plate) ?? 0) + 1;
-        last.set(s.plate, seq);
-        return { ...s, seq };
-      });
-      return [...cur, ...added];
-    });
-    toast(`นำเข้า ${rows.length} ร้านแล้ว${mode === 'append' && skip.size ? ` (ข้าม ${skip.size} ร้านที่มีอยู่แล้ว)` : ''}`);
-    setPreview(null);
-    setOpen(true);
+  async function applyImport(mode: 'replace' | 'append') {
+    if (!preview) return;
+    const days = preview.replace.summary.dates.map((x) => thaiDate(x.date)).join(', ');
+    if (mode === 'replace' && preview.append && !window.confirm(`รายการเดิมของวันที่ในไฟล์ (${days}) จะถูกแทนที่ด้วยไฟล์นี้ — ทำต่อไหม?`)) return;
+    setBusy(true);
+    try {
+      const r = await importDeliveryPlan(date, mode, preview.rows, true);
+      const ds = r.summary.dates.map((x) => x.date);
+      toast(`นำเข้าแล้ว ${r.summary.stores} ร้าน · ${r.summary.bills} บิล${ds.length > 1 ? ` · ${ds.length} วัน` : ''}${r.summary.new_stores ? ` · ร้านใหม่ ${r.summary.new_stores} ร้าน` : ''}`);
+      setPreview(null);
+      setOpen(true);
+      // this day is not in the file: show the first day that was imported
+      if (ds.length && !ds.includes(date)) setDate(ds[0]); else await load();
+    } catch (e) {
+      toast('นำเข้าไม่สำเร็จ: ' + errMsg(e));
+    } finally { setBusy(false); }
   }
 
-  function addOne() {
-    const plate = knownPlate(form.plate) ?? form.plate.trim();
-    if (!plate || !form.name.trim()) return toast('เลือกทะเบียนรถและกรอกชื่อร้านก่อน');
-    const dup = stops.find((s) => sameStore(s, { store_code: form.code.trim(), store_name: form.name.trim() }));
-    if (dup) {
-      return setAddErr(dup.plate === plate
-        ? `${storeLabel(dup)} อยู่ในรถ ${plate} ลำดับ ${dup.seq} แล้ว`
-        : `${storeLabel(dup)} อยู่ในรถ ${dup.plate} ลำดับ ${dup.seq} แล้ว — ร้านเดียวกันส่งได้คันเดียว (ถ้าจะย้ายคัน ให้ลบออกจากรถ ${dup.plate} ก่อน)`);
-    }
-    setAddErr('');
-    const seq = Math.max(0, ...stops.filter((s) => s.plate === plate).map((s) => s.seq)) + 1;
-    setStops((cur) => [...cur, { id: uid(), plate, seq, store_code: form.code.trim(), store_name: form.name.trim(), store_type: form.type,
-      address: '', cases: form.cases ? Number(form.cases) : null, bill_no: '' }]);
-    setForm({ plate, name: '', code: '', type: '', cases: '' }); // keep the vehicle for the next store
-    toast(`เพิ่ม ${form.name.trim()} ให้รถ ${plate} แล้ว`);
+  async function addOne() {
+    if (!form.plate || !form.code.trim() || !form.name.trim()) return setAddErr('เลือกทะเบียนรถ และกรอกรหัสร้านกับชื่อร้านก่อน');
+    setBusy(true);
+    try {
+      await addDeliveryStop({ date, plate: form.plate, code: form.code, name: form.name, type: form.type, cases: form.cases, bill: form.bill });
+      setAddErr('');
+      toast(`เพิ่ม ${form.name.trim()} ให้รถ ${form.plate} แล้ว`);
+      setForm({ plate: form.plate, name: '', code: '', type: '', cases: '', bill: '' }); // keep the vehicle for the next store
+      setOpenPlates((cur) => new Set(cur).add(form.plate));
+      await load();
+    } catch (e) {
+      setAddErr(errMsg(e));
+    } finally { setBusy(false); }
   }
 
-  const remove = (id: string) => setStops((cur) => cur.filter((s) => s.id !== id));
-  function clearDay() {
-    if (!window.confirm(`ล้างรายการร้านค้าที่ต้องส่งของวันนี้ทั้งหมด (${stops.length} ร้าน)?`)) return;
-    setStops(() => []);
+  async function remove(s: DeliveryStop) {
+    if (!window.confirm(`เอา ${s.name} ออกจากรถ ${s.plate} ของวันที่ ${thaiDate(date)}?`)) return;
+    try { await removeDeliveryStop(s.id); await load(); } catch (e) { toast('ลบไม่สำเร็จ: ' + errMsg(e)); }
   }
+  async function clearDay() {
+    if (!window.confirm(`ล้างรายการร้านค้าที่ต้องส่งของวันที่ ${thaiDate(date)} ทั้งหมด (${list.length} ร้าน)?`)) return;
+    try { await clearDeliveryPlan(date); await load(); toast('ล้างรายการของวันนี้แล้ว'); } catch (e) { toast('ล้างไม่สำเร็จ: ' + errMsg(e)); }
+  }
+
+  const pv = preview;
+  const fileErrors = pv?.replace.errors ?? [];
+  const appendErrors = pv?.append?.errors.filter((e) => !fileErrors.includes(e)) ?? [];
+  const notes = [...(pv?.typeNotes ?? []), ...(pv?.replace.notes ?? [])];
 
   return (
     <section className="panel plan">
       <div className="plan-head">
         <div>
-          <h2 className="flush">ร้านค้าที่ต้องส่ง <span className="plan-trial">ทดลอง · ยังไม่บันทึกลงระบบ</span></h2>
+          <h2 className="flush">ร้านค้าที่ต้องส่ง</h2>
+          <div className="row plan-date">
+            <input type="date" aria-label="วันที่ส่ง" value={date} max={addDays(today(), 60)}
+              onChange={(e) => setDate(e.target.value || today())} />
+            <button type="button" className={`btn ghost sm ${date === today() ? 'on' : ''}`} onClick={() => setDate(today())}>วันนี้</button>
+            <button type="button" className={`btn ghost sm ${date === tomorrow ? 'on' : ''}`} onClick={() => setDate(tomorrow)}>พรุ่งนี้</button>
+          </div>
           <span className="note">
-            {stops.length ? <>{stops.length} ร้าน · {byPlate.length} คัน{totalCases ? ` · ${totalCases.toLocaleString('th-TH')} ลัง` : ''}</> : 'ยังไม่มีรายการของวันนี้'}
+            {thaiDate(date)}{locked ? ' · ผ่านมาแล้ว ดูได้อย่างเดียว' : ''} · {stops === null ? 'กำลังโหลด…' : list.length
+              ? <>{list.length} ร้าน · {byPlate.length} คัน · {totalBills} บิล{totalCases !== null ? ` · ${casesText(totalCases)} ลัง` : ''}</>
+              : 'ยังไม่มีรายการ'}
           </span>
         </div>
         <div className="row plan-actions">
           <input ref={fileRef} type="file" hidden accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); }} />
-          <button type="button" className="btn sm" onClick={() => fileRef.current?.click()}>นำเข้าไฟล์จาก SAP</button>
-          <button type="button" className="btn ghost sm" onClick={() => setAdding((a) => !a)}>＋ เพิ่มร้านค้า</button>
+          {/* a file may hold other (future) days, so importing is allowed while viewing a past day */}
+          <button type="button" className="btn sm" disabled={busy} onClick={() => fileRef.current?.click()}>{busy && !pv ? 'กำลังอ่านไฟล์…' : 'นำเข้าไฟล์จาก SAP'}</button>
+          {!locked && <button type="button" className="btn ghost sm" onClick={() => setAdding((a) => !a)}>＋ เพิ่มร้านค้า</button>}
           <button type="button" className="btn ghost sm" onClick={template}><span className="ii" aria-hidden><DownloadIcon /></span>ไฟล์ตัวอย่าง</button>
-          {stops.length > 0 && <button type="button" className="btn ghost sm" onClick={() => setOpen((o) => !o)}>{open ? 'ซ่อนรายการ' : 'แสดงรายการ'}</button>}
+          {list.length > 0 && <button type="button" className="btn ghost sm" onClick={() => setOpen((o) => !o)}>{open ? 'ซ่อนรายการ' : 'แสดงรายการ'}</button>}
         </div>
       </div>
+      {error && <div className="form-error" role="alert">{error}</div>}
 
-      {/* import preview */}
-      {preview && (
+      {/* import preview: the server's check of the file (nothing saved yet) */}
+      {pv && (
         <div className="plan-preview">
-          <b>ไฟล์ {preview.file}: {preview.rows.length} ร้าน · {new Set(preview.rows.map((r) => r.plate)).size} คัน</b>
-          {preview.problems.length > 0 && (
-            <ul className="plan-problems">{preview.problems.slice(0, 8).map((p) => <li key={p}>{p}</li>)}
-              {preview.problems.length > 8 && <li>…และอีก {preview.problems.length - 8} รายการ</li>}</ul>
+          <b>ไฟล์ {pv.file}: {pv.replace.summary.stores} ร้าน · {pv.replace.summary.vehicles} คัน · {pv.replace.summary.bills} บิล
+            {pv.replace.summary.cases ? ` · ${casesText(pv.replace.summary.cases)} ลัง` : ''}
+            {pv.replace.summary.new_stores ? ` · ร้านใหม่ ${pv.replace.summary.new_stores} ร้าน` : ''}</b>
+          {/* one line per delivery date in the file */}
+          {pv.replace.summary.dates.length > 0 && (
+            <ul className="plan-days">
+              {pv.replace.summary.dates.map((x) => (
+                <li key={x.date}><b>{thaiDate(x.date)}</b> · {x.stores} ร้าน · {x.vehicles} คัน · {x.bills} บิล{x.cases ? ` · ${casesText(x.cases)} ลัง` : ''}</li>
+              ))}
+            </ul>
           )}
-          {preview.errors.length > 0 && (
+          {notes.length > 0 && (
+            <ul className="plan-problems">{notes.slice(0, 8).map((p) => <li key={p}>{p}</li>)}
+              {notes.length > 8 && <li>…และอีก {notes.length - 8} รายการ</li>}</ul>
+          )}
+          {fileErrors.length > 0 && (
             <div className="form-error" role="alert">
-              <b>นำเข้าไม่ได้ — มีร้านเดียวกันอยู่ในรถหลายคัน ({preview.errors.length} รายการ) แก้ไฟล์แล้วนำเข้าใหม่</b>
-              <ul className="plan-problems">{preview.errors.slice(0, 8).map((p) => <li key={p}>{p}</li>)}
-                {preview.errors.length > 8 && <li>…และอีก {preview.errors.length - 8} รายการ</li>}</ul>
+              <b>นำเข้าไม่ได้ — ไฟล์มีปัญหา {fileErrors.length} รายการ แก้ไฟล์แล้วนำเข้าใหม่</b>
+              <ul className="plan-problems">{fileErrors.slice(0, 8).map((p) => <li key={p}>{p}</li>)}
+                {fileErrors.length > 8 && <li>…และอีก {fileErrors.length - 8} รายการ</li>}</ul>
             </div>
           )}
-          {!preview.errors.length && stops.length > 0 && vsToday.clash.length > 0 && (
+          {!fileErrors.length && appendErrors.length > 0 && (
             <div className="form-error" role="alert">
-              <b>เพิ่มต่อจากรายการเดิมไม่ได้ — ร้านในไฟล์อยู่ในรถคันอื่นของวันนี้แล้ว</b>
-              <ul className="plan-problems">{vsToday.clash.slice(0, 8).map((p) => <li key={p}>{p}</li>)}
-                {vsToday.clash.length > 8 && <li>…และอีก {vsToday.clash.length - 8} รายการ</li>}</ul>
+              <b>เพิ่มต่อจากรายการเดิมไม่ได้ — ชนกับรายการที่บันทึกไว้แล้ว</b>
+              <ul className="plan-problems">{appendErrors.slice(0, 8).map((p) => <li key={p}>{p}</li>)}
+                {appendErrors.length > 8 && <li>…และอีก {appendErrors.length - 8} รายการ</li>}</ul>
             </div>
           )}
-          {!preview.errors.length && stops.length > 0 && !vsToday.clash.length && vsToday.already.length > 0 && (
-            <span className="note">ถ้าเพิ่มต่อ: {vsToday.already.length} ร้านมีอยู่ในรถคันเดิมแล้ว จะข้ามไม่เพิ่มซ้ำ</span>
+          {!fileErrors.length && !appendErrors.length && pv.append && pv.append.summary.already > 0 && (
+            <span className="note">ถ้าเพิ่มต่อ: {pv.append.summary.already} ร้านอยู่ในรถคันเดิมแล้ว — เพิ่มเฉพาะบิลใหม่ของร้านนั้น</span>
           )}
           <div className="row">
-            <button type="button" className="btn sm" disabled={preview.errors.length > 0} onClick={() => applyImport('replace')}>ใช้รายการนี้แทนของวันนี้</button>
-            {stops.length > 0 && (
-              <button type="button" className="btn ghost sm" disabled={preview.errors.length > 0 || vsToday.clash.length > 0}
+            <button type="button" className="btn sm" disabled={busy || fileErrors.length > 0} onClick={() => applyImport('replace')}>
+              {pv.append ? 'ใช้แทนรายการเดิมของวันที่ในไฟล์' : 'นำเข้ารายการนี้'}</button>
+            {pv.append && (
+              <button type="button" className="btn ghost sm" disabled={busy || fileErrors.length > 0 || appendErrors.length > 0}
                 onClick={() => applyImport('append')}>เพิ่มต่อจากรายการเดิม</button>
             )}
-            <button type="button" className="btn ghost sm" onClick={() => setPreview(null)}>ยกเลิก</button>
+            <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setPreview(null)}>ยกเลิก</button>
           </div>
         </div>
       )}
 
       {/* add one store */}
-      {adding && (
+      {adding && !locked && (
         <div className="plan-add">
           <select aria-label="ทะเบียนรถ" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })}>
             <option value="">— ทะเบียนรถ * —</option>
             {vehicles.filter((v) => v.active).map((v) => <option key={v.id} value={v.plate}>{v.plate}</option>)}
           </select>
+          <input aria-label="รหัสร้าน" placeholder="รหัสร้าน (SAP) *" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
           <input aria-label="ชื่อร้าน" placeholder="ชื่อร้าน *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input aria-label="รหัสร้าน" placeholder="รหัสร้าน (SAP)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
           <select aria-label="ประเภทร้าน" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as StoreType | '' })}>
             <option value="">ประเภทร้าน</option>
             {STORE_TYPES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
           </select>
+          <input aria-label="เลขที่บิล" placeholder="เลขที่บิล" value={form.bill} onChange={(e) => setForm({ ...form, bill: e.target.value })} />
           <input aria-label="จำนวนลัง" placeholder="ลัง" inputMode="numeric" value={form.cases}
             onChange={(e) => setForm({ ...form, cases: e.target.value.replace(/\D/g, '') })} />
           <div className="row">
-            <button type="button" className="btn sm" onClick={addOne} disabled={!form.plate || !form.name.trim()}>เพิ่ม</button>
+            <button type="button" className="btn sm" onClick={addOne} disabled={busy || !form.plate || !form.code.trim() || !form.name.trim()}>เพิ่ม</button>
             <button type="button" className="btn ghost sm" onClick={() => { setAdding(false); setAddErr(''); }}>ปิด</button>
           </div>
           {addErr && <div className="form-error plan-add-err" role="alert">{addErr}</div>}
         </div>
       )}
 
-      {/* the plan, by vehicle */}
+      {/* the plan: one row per vehicle */}
       {open && byPlate.length > 0 && (
         <div className="plan-trucks">
-          {byPlate.map(([plate, list]) => {
+          {byPlate.map(([plate, rows]) => {
             const shown = openPlates.has(plate);
-            const cases = list.reduce((n, s) => n + (s.cases ?? 0), 0);
+            const cases = sumCases(rows);
             return (
-            <div className={`plan-truck ${shown ? 'open' : ''}`} key={plate}>
-              <div className="plan-truck-head">
-                <b className="plan-plate">{plate}</b>
-                <span className="plan-count"><b className="mono">{list.length}</b> ร้าน</span>
-                <span className="plan-count"><b className="mono">{list.some((s) => s.cases !== null) ? cases.toLocaleString('th-TH') : '–'}</b> ลัง</span>
-                <span className="plan-route note">{list.map((s) => s.store_name).join(' → ')}</span>
-                <button type="button" className="btn ghost sm plan-more" aria-expanded={shown}
-                  onClick={() => setOpenPlates((cur) => { const n = new Set(cur); if (n.has(plate)) n.delete(plate); else n.add(plate); return n; })}>
-                  {shown ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด'} <span className="plan-chev" aria-hidden>›</span>
-                </button>
+              <div className={`plan-truck ${shown ? 'open' : ''}`} key={plate}>
+                <div className="plan-truck-head">
+                  <b className="plan-plate">{plate}</b>
+                  <span className="plan-count"><b className="mono">{rows.length}</b> ร้าน</span>
+                  <span className="plan-count"><b className="mono">{casesText(cases)}</b> ลัง</span>
+                  <span className="plan-route note">{rows.map((s) => s.name).join(' · ')}</span>
+                  <button type="button" className="btn ghost sm plan-more" aria-expanded={shown}
+                    onClick={() => setOpenPlates((cur) => { const n = new Set(cur); if (n.has(plate)) n.delete(plate); else n.add(plate); return n; })}>
+                    {shown ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด'} <span className="plan-chev" aria-hidden>›</span>
+                  </button>
+                </div>
+                {shown && <ul>
+                  {rows.map((s) => (
+                    <li key={s.id}>
+                      <span className="plan-store">
+                        <span className="plan-store-top">
+                          <b className="plan-store-name">{s.name}</b>
+                          <span className="plan-tag mono">{s.code}</span>
+                          {s.type && <span className="plan-tag">{typeName(s.type)}</span>}
+                        </span>
+                        {s.address && <span className="plan-addr"><span className="ii" aria-hidden><PinIcon /></span>{s.address}</span>}
+                        {s.bills.length > 0 && (
+                          <span className="plan-bills">
+                            <span className="plan-bills-label">{s.bills.length} บิล</span>
+                            {s.bills.map((b, i) => (
+                              <span key={`${b.bill_no}-${i}`} className="plan-bill">
+                                <span className="mono">{b.bill_no || 'ไม่มีเลขบิล'}</span>
+                                {b.cases !== null && <b className="mono">{casesText(b.cases)} ลัง</b>}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </span>
+                      <span className="mono plan-cases">{casesText(s.cases)}<small> ลัง</small></span>
+                      {!locked && <button type="button" className="btn ghost sm plan-del" onClick={() => remove(s)} aria-label={`ลบ ${s.name}`}>✕</button>}
+                    </li>
+                  ))}
+                </ul>}
               </div>
-              {shown && <ol>
-                {list.map((s) => (
-                  <li key={s.id}>
-                    <span className="plan-seq mono">{s.seq}</span>
-                    <span className="plan-store">
-                      <b>{s.store_name}</b>
-                      <span className="note">{[s.store_code, s.store_type && storeTypeName(s.store_type), s.address, s.bill_no && `บิล ${s.bill_no}`].filter(Boolean).join(' · ') || '—'}</span>
-                    </span>
-                    <span className="mono plan-cases">{s.cases ?? '–'}<small> ลัง</small></span>
-                    <button type="button" className="btn ghost sm plan-del" onClick={() => remove(s.id)} aria-label={`ลบ ${s.store_name}`}>✕</button>
-                  </li>
-                ))}
-              </ol>}
-            </div>
             );
           })}
         </div>
       )}
-      {stops.length > 0 && open && (
+      {list.length > 0 && open && !locked && (
         <div className="row plan-foot">
-          <span className="note">ข้อมูลนี้อยู่ในเบราว์เซอร์เครื่องนี้เท่านั้น ฝั่งพนักงานยังไม่เห็น — จะเชื่อมเมื่อสร้างฐานข้อมูลร้านค้า</span>
-          <button type="button" className="btn danger sm" onClick={clearDay}>ล้างรายการของวันนี้</button>
+          <span />
+          <button type="button" className="btn danger sm" onClick={clearDay}>ล้างรายการของวันนี้ทั้งหมด</button>
         </div>
       )}
     </section>

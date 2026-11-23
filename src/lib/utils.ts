@@ -1,4 +1,5 @@
-export const today = () => new Date().toLocaleDateString('sv-SE');
+/** today as YYYY-MM-DD in Thai time (same as the server), whatever time zone the device is set to */
+export const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
 export const nowTime = () => new Date().toTimeString().slice(0, 5);
 export const pad2 = (n: number | string) => String(n).padStart(2, '0');
 

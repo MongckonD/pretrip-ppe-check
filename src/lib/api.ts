@@ -18,6 +18,7 @@ export const {
   listPpeInspections, savePpeInspections, deletePpeInspection,
   listTripActivities, deleteTripActivity, startWork, endWork,
   getMyLicense, saveMyLicense, listLicenses, licensePhotoUrl,
+  listDeliveryPlan, importDeliveryPlan, addDeliveryStop, removeDeliveryStop, clearDeliveryPlan,
 } = api;
 
 export const resetDemo = mock.resetDemo;

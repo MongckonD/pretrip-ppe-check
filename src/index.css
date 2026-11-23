@@ -1185,7 +1185,7 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .plan-actions { gap: 6px; }
 .plan-preview { display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: #FFFBEF; border: 1px solid #F2D48A; }
 .plan-problems { margin: 0; padding-left: 18px; font-size: 13px; color: #8A5A00; }
-.plan-add { display: grid; grid-template-columns: 150px minmax(0, 1.4fr) minmax(0, 1fr) 140px 80px auto; gap: 8px; align-items: center; padding: 12px; border-radius: 10px; background: var(--soft); border: 1px dashed #CFCFCF; }
+.plan-add { display: grid; grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1.4fr) 130px minmax(0, 1fr) 70px auto; gap: 8px; align-items: center; padding: 12px; border-radius: 10px; background: var(--soft); border: 1px dashed #CFCFCF; }
 .plan-add-err { grid-column: 1 / -1; margin: 0; }
 .form-error .plan-problems { color: inherit; margin-top: 4px; }
 .plan-trucks { display: grid; gap: 8px; }
@@ -1203,12 +1203,9 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
   .plan-truck-head { grid-template-columns: auto auto 1fr auto; gap: 8px; }
   .plan-route { display: none; }
 }
-.plan-truck ol { list-style: none; margin: 0; padding: 0; }
-.plan-truck li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 32px; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line); }
+.plan-truck ul { list-style: none; margin: 0; padding: 0; }
+.plan-truck li { display: grid; grid-template-columns: minmax(0, 1fr) auto 32px; gap: 8px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); }
 .plan-seq { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); border: 1px solid var(--line); font-size: 12px; }
-.plan-store { display: grid; min-width: 0; }
-.plan-store b, .plan-store .note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plan-store .note { font-size: 12px; }
 .plan-cases small { font-family: var(--font); font-size: 11px; color: var(--muted); }
 .plan-del { padding: 2px 8px; }
 .plan-foot { justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -1234,3 +1231,46 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 
 /* app version at the bottom of the login card */
 .login-ver { margin: 0; text-align: center; font-size: 12px; color: var(--muted); }
+
+/* staff: ร้านค้าที่ต้องส่ง (today's stores of the vehicle) */
+.dl-head { align-items: flex-start; gap: 10px; }
+.dl-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.dl-item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.dl-ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); }
+.dl-main { display: grid; gap: 2px; min-width: 0; }
+.dl-main b { font-size: 16px; }
+.dl-main .note { font-size: 13px; overflow-wrap: anywhere; }
+.dl-addr { display: inline; }
+.dl-cases { display: grid; justify-items: end; line-height: 1.1; }
+.dl-cases b { font-size: 20px; }
+.dl-cases small { color: var(--muted); font-size: 12px; }
+.dl-bills-btn { justify-self: start; display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 4px 10px; font: inherit; font-size: 13px; font-weight: 600; color: var(--brand); background: var(--brand-soft); border: 0; border-radius: 999px; cursor: pointer; }
+.dl-bills-btn[aria-expanded='true'] .plan-chev { transform: rotate(90deg); }
+.dl-bills { grid-column: 2 / -1; width: 100%; border-collapse: collapse; font-size: 14px; }
+.dl-bills th, .dl-bills td { padding: 6px 8px; border-top: 1px solid var(--line); text-align: left; }
+.dl-bills th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.dl-bills .r { text-align: right; }
+.dl-bills tfoot td { font-weight: 700; }
+/* delivery plan: its own date (today / tomorrow / pick), and the days in an imported file */
+.plan-date { gap: 6px; margin: 6px 0 2px; flex-wrap: wrap; }
+.plan-date input[type='date'] { width: auto; padding: 6px 10px; }
+.plan-date .btn.on { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+.plan-days { margin: 0; padding-left: 18px; font-size: 14px; }
+
+/* delivery plan details: one store per row — name big, code/type as tags, address and bills on their own lines */
+.plan-store { display: grid; gap: 6px; min-width: 0; }
+.plan-store-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.plan-store-name { font-size: 16px; color: var(--ink); }
+.plan-tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--soft); border: 1px solid var(--line); color: #444; }
+.plan-addr { display: block; font-size: 14px; color: #444; overflow-wrap: anywhere; }
+.plan-bills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.plan-bills-label { font-size: 13px; font-weight: 700; color: #444; margin-right: 2px; }
+.plan-bill { display: inline-flex; gap: 6px; align-items: baseline; font-size: 13px; padding: 3px 8px; border-radius: 6px; background: #F4F8F6; border: 1px solid #D5E8DD; color: #333; }
+.plan-bill b { color: #145c3e; }
+.plan-cases { font-size: 18px; font-weight: 700; }
+.plan-cases small { font-size: 12px; font-weight: 400; }
+/* staff store list: same text sizes as the admin list */
+.dl-main { gap: 6px; }
+.dl-main .plan-store-name { font-size: 17px; }
+.dl-bills td { font-size: 15px; }
+.dl-cases b { font-size: 22px; }

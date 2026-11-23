@@ -12,6 +12,8 @@ export interface Env {
   /** driver-licence photos only (separate private bucket) */
   LICENSES: R2Bucket;
   ASSETS: Fetcher;
+  /** "1" = store delivery (ร้านค้าที่ต้องส่ง) API on; anything else = its routes answer 404 (version 1) */
+  FEATURE_STORE_DELIVERY?: string;
 }
 
 export interface Ctx {
@@ -178,9 +180,11 @@ export async function putVehicle({ env, actor, req }: Ctx) {
   const same = await findVehicleByPlate(env, p);
 
   if (id) {
-    const cur = await env.DB.prepare(`SELECT id FROM vehicles WHERE id = ?1`).bind(id).first();
+    const cur = await env.DB.prepare(`SELECT id, plate, active FROM vehicles WHERE id = ?1`).bind(id).first<{ id: string; plate: string; active: number }>();
     if (!cur) throw notFound('ไม่พบรถคันนี้');
     if (same && same.id !== id) throw conflict(`ทะเบียน ${same.plate} มีอยู่แล้ว`);
+    // switching off: not while it still has stores to deliver
+    if (!active && cur.active === 1) await assertNoOpenDeliveries(env, id, cur.plate);
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE vehicles SET plate = ?2, type = ?3, active = ?4,
@@ -238,16 +242,33 @@ export async function deleteEmployee({ env, actor, params }: Ctx) {
   return json({ ok: true });
 }
 
+/**
+ * A vehicle with stores to deliver today or later cannot be deleted or switched off: those stores would drop out of
+ * every list (staff can no longer pick the vehicle). The admin moves or removes them first.
+ */
+async function assertNoOpenDeliveries(env: Env, vehicleId: string, plateText: string) {
+  const open = await env.DB.prepare(
+    `SELECT count(*) AS stores, min(plan_date) AS first_date FROM delivery_plan WHERE vehicle_id = ?1 AND plan_date >= ?2`,
+  ).bind(vehicleId, todayTH()).first<{ stores: number; first_date: string | null }>();
+  if (open?.stores) {
+    throw conflict(`รถ ${plateText} มีแผนส่ง ${open.stores} ร้าน ตั้งแต่วันที่ ${open.first_date} — `
+      + 'ย้ายร้านไปรถคันอื่นหรือลบออกจากแผน (หน้าหลัก → ร้านค้าที่ต้องส่ง) ก่อน');
+  }
+}
+
 /** Vehicles with history are deactivated instead of deleted, so reports keep their plate. */
 export async function deleteVehicle({ env, actor, params }: Ctx) {
   requireRole(actor, 'admin');
   const id = decodeURIComponent(params[0]);
   const v = await env.DB.prepare(`SELECT id, plate FROM vehicles WHERE id = ?1`).bind(id).first<{ id: string; plate: string }>();
   if (!v) throw notFound('ไม่พบรถคันนี้');
+  await assertNoOpenDeliveries(env, id, v.plate);
+  // past delivery plans count as history too (the vehicle is switched off instead of deleted)
   const used = await env.DB.prepare(
     `SELECT EXISTS (SELECT 1 FROM vehicle_inspections WHERE vehicle_id = ?1)
          OR EXISTS (SELECT 1 FROM ppe_inspections WHERE vehicle_id = ?1)
-         OR EXISTS (SELECT 1 FROM trip_activities WHERE vehicle_id = ?1) AS used`,
+         OR EXISTS (SELECT 1 FROM trip_activities WHERE vehicle_id = ?1)
+         OR EXISTS (SELECT 1 FROM delivery_plan WHERE vehicle_id = ?1) AS used`,
   ).bind(id).first<{ used: number }>();
   if (used?.used) {
     await env.DB.batch([

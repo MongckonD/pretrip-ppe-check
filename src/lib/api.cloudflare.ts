@@ -5,7 +5,7 @@
  */
 import type { LicenseForm, LicenseInfo, LicenseRow } from './license';
 import type {
-  Employee, ListOpts, Master, PpeForm, PpeInspection, TripActivity, Vehicle, VehicleForm, VehicleInspection,
+  DeliveryAddIn, DeliveryImportResult, DeliveryRowIn, DeliveryStop, Employee, ListOpts, Master, PpeForm, PpeInspection, TripActivity, Vehicle, VehicleForm, VehicleInspection,
 } from './types';
 
 /** admin = ทุกอย่าง · user = พนักงาน */
@@ -252,3 +252,14 @@ export const endWork = (id: string) =>
 export async function resetDemo(_empty = false) {
   throw new Error('ใช้ได้เฉพาะโหมดทดสอบ');
 }
+
+/* ---------- ร้านค้าที่ต้องส่ง (feature switch storeDelivery; the Worker answers 404 while it is off) ---------- */
+/** admin: every vehicle of the day (or one plate) · staff: only `plate`, today, own team */
+export const listDeliveryPlan = (date: string, plate?: string) =>
+  call<DeliveryStop[]>('GET', `/api/delivery-plan?date=${encodeURIComponent(date)}${plate ? `&plate=${encodeURIComponent(plate)}` : ''}`);
+/** admin: SAP file rows; commit = false checks only */
+export const importDeliveryPlan = (date: string, mode: 'replace' | 'append', rows: DeliveryRowIn[], commit: boolean) =>
+  call<DeliveryImportResult>('POST', '/api/delivery-plan/import', { date, mode, rows, commit });
+export const addDeliveryStop = (b: DeliveryAddIn) => call<{ id: string }>('POST', '/api/delivery-plan', b);
+export const removeDeliveryStop = (id: string) => call<{ ok: true }>('DELETE', `/api/delivery-plan/${encodeURIComponent(id)}`);
+export const clearDeliveryPlan = (date: string) => call<{ ok: true }>('DELETE', `/api/delivery-plan?date=${encodeURIComponent(date)}`);

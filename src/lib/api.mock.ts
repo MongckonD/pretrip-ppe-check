@@ -5,7 +5,7 @@
  */
 import { failedDefects } from './api.cloudflare';
 import type {
-  ListOpts,
+  DeliveryAddIn, DeliveryBill, DeliveryImportResult, DeliveryImportStop, DeliveryRowIn, DeliveryStop, ListOpts,
   Defect, Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity,
 } from './types';
 import { licenseStatus, type DriverLicense, type LicenseForm, type LicenseInfo, type LicenseRow } from './license';
@@ -188,12 +188,23 @@ export async function upsertVehicle(v: Partial<Vehicle> & { plate: string }) {
   const clash = db.vehicles.find((x) => x.plate === v.plate && x.id !== v.id);
   if (clash) throw new Error(`ทะเบียน ${v.plate} มีอยู่แล้ว`);
   const i = v.id ? db.vehicles.findIndex((x) => x.id === v.id) : -1;
+  if (i >= 0 && v.active === false && db.vehicles[i].active) mockNoOpenDeliveries(db.vehicles[i].plate);
   if (i >= 0) db.vehicles[i] = { ...db.vehicles[i], ...v };
   else db.vehicles.push({ id: uuid(), type: '', active: true, ...v });
   persist();
 }
+/** same rule as the Worker: a vehicle with stores to deliver today or later cannot be deleted or switched off */
+function mockNoOpenDeliveries(plate: string) {
+  const open = dpLoad().plan.filter((p) => p.plate === plate && p.date >= today());
+  if (open.length) {
+    const first = open.map((p) => p.date).sort()[0];
+    throw new Error(`รถ ${plate} มีแผนส่ง ${open.length} ร้าน ตั้งแต่วันที่ ${first} — ย้ายร้านไปรถคันอื่นหรือลบออกจากแผน (หน้าหลัก → ร้านค้าที่ต้องส่ง) ก่อน`);
+  }
+}
 export async function deleteVehicle(id: string) {
   const db = load();
+  const v = db.vehicles.find((x) => x.id === id);
+  if (v) mockNoOpenDeliveries(v.plate);
   db.vehicles = db.vehicles.filter((v) => v.id !== id);
   persist();
 }
@@ -457,3 +468,185 @@ export async function listLicenses(): Promise<{ rows: LicenseRow[]; warn_days: n
   return { rows, warn_days: 60, today: today() };
 }
 export const licensePhotoUrl = (_id: string) => licPhoto ?? '';
+
+/* ---------- ร้านค้าที่ต้องส่ง (test mode: same rules as worker/delivery-routes.ts, kept in this browser) ---------- */
+/** snap = the store name / type / address as of that day (history does not follow later changes) */
+interface MockPlanRow { id: string; date: string; plate: string; code: string; sort: number; bills: DeliveryBill[]; snap?: { name: string; type: string; address: string } }
+interface MockDelivery { stores: Record<string, { name: string; type: string; address: string }>; plan: MockPlanRow[] }
+const DP_KEY = 'pretrip-mock-delivery-v1';
+function dpLoad(): MockDelivery {
+  try { return JSON.parse(localStorage.getItem(DP_KEY) ?? 'null') ?? { stores: {}, plan: [] }; } catch { return { stores: {}, plan: [] }; }
+}
+function dpSave(d: MockDelivery) { try { localStorage.setItem(DP_KEY, JSON.stringify(d)); } catch { /* memory only */ } }
+const dpText = (v: string) => (v ?? '').trim().replace(/\s+/g, ' ');
+const dpCode = (v: string) => (v ?? '').replace(/\s+/g, '').toUpperCase();
+const dpPlateKey = (p: string) => p.replace(/[\s.-]/g, '').toUpperCase();
+/** same rule as the Worker: whole number 0–100000 (commas allowed); otherwise the reason as a string */
+function dpCases(v: string): number | null | string {
+  const raw = (v ?? '').trim();
+  const t = raw.replace(/,/g, '').replace(/\s+/g, '');
+  if (!t) return null;
+  if (t.startsWith('-')) return `จำนวนลังติดลบ (${raw})`;
+  if (!/^\d+$/.test(t)) return `จำนวนลัง "${raw}" ต้องเป็นเลขจำนวนเต็ม`;
+  return Number(t) <= 100000 ? Number(t) : `จำนวนลัง ${raw} มากเกินไป`;
+}
+const dpAddDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const dpIso = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
+function dpClosed(date: string) {
+  const t = today();
+  if (date < t) return `วันที่ ${date} ผ่านมาแล้ว — แผนส่งย้อนหลังแก้ไขไม่ได้`;
+  if (date > dpAddDays(t, 60)) return `วันที่ ${date} ไกลเกิน 60 วันข้างหน้า — ตรวจวันที่ในไฟล์`;
+  return '';
+}
+
+export async function listDeliveryPlan(date: string, plate?: string): Promise<DeliveryStop[]> {
+  await tick();
+  const d = dpLoad();
+  return d.plan.filter((p) => p.date === date && (!plate || dpPlateKey(p.plate) === dpPlateKey(plate)))
+    .sort((a, b) => a.plate.localeCompare(b.plate) || a.sort - b.sort)
+    .map((p) => {
+      const st = p.snap ?? d.stores[p.code] ?? { name: p.code, type: '', address: '' };
+      return {
+        id: p.id, plate: p.plate, code: p.code, name: st.name, type: st.type, address: st.address, bills: p.bills,
+        cases: p.bills.some((b) => b.cases !== null) ? p.bills.reduce((n, b) => n + (b.cases ?? 0), 0) : null,
+      };
+    });
+}
+
+type DpStop = DeliveryImportStop & { existing_id?: string };
+function dpCheck(fallback: string, mode: 'replace' | 'append', rows: DeliveryRowIn[]) {
+  const d = dpLoad();
+  const vehOf = new Map(load().vehicles.filter((v) => v.active).map((v) => [dpPlateKey(v.plate), v.plate]));
+  const errors: string[] = [];
+  const notes: string[] = [];
+  const stops = new Map<string, DpStop>();
+  const billAt = new Map<string, string>();
+  rows.forEach((r) => {
+    const name = dpText(r.name); const code = dpCode(r.code); const p = dpText(r.plate); const dateIn = dpText(r.date);
+    if (!name && !code && !p) return;
+    const date = dateIn || fallback;
+    if (!dpIso(date)) return errors.push(`แถว ${r.line}: วันที่ส่ง "${dateIn}" ไม่ถูกต้อง`);
+    const closed = dpClosed(date);
+    if (closed) return errors.push(`แถว ${r.line}: ${closed}`);
+    if (!code) return errors.push(`แถว ${r.line}: ไม่มีรหัสร้าน`);
+    if (!name) return errors.push(`แถว ${r.line}: ร้าน ${code} ไม่มีชื่อร้าน`);
+    if (!p) return errors.push(`แถว ${r.line}: ${name} ไม่มีทะเบียนรถ`);
+    const plate = vehOf.get(dpPlateKey(p));
+    if (!plate) return errors.push(`แถว ${r.line}: ทะเบียน ${p} ไม่มีในระบบ — เพิ่มรถที่แท็บตั้งค่าก่อน`);
+    const cs = dpCases(r.cases);
+    if (typeof cs === 'string') return errors.push(`แถว ${r.line}: ${name} — ${cs}`);
+    const bill = { bill_no: dpText(r.bill), cases: cs };
+    const key = `${date}|${code}`;
+    if (bill.bill_no) {
+      const at = billAt.get(bill.bill_no);
+      if (at && at !== key) { const [d2, c2] = at.split('|'); return errors.push(`แถว ${r.line}: บิล ${bill.bill_no} ซ้ำกับร้าน ${c2} วันที่ ${d2} ในไฟล์ — บิลหนึ่งใบส่งได้ครั้งเดียว`); }
+    }
+    const prev = stops.get(key);
+    if (prev && prev.plate !== plate) return errors.push(`แถว ${r.line}: ${name} (${code}) วันที่ ${date} อยู่ทั้งรถ ${prev.plate} และรถ ${plate} — ร้านเดียวกันส่งได้คันเดียว`);
+    if (bill.bill_no) billAt.set(bill.bill_no, key);
+    if (prev) {
+      prev.lines.push(r.line);
+      if (!bill.bill_no && bill.cases === null) return;
+      if (bill.bill_no && prev.bills.some((b) => b.bill_no === bill.bill_no)) notes.push(`แถว ${r.line}: บิล ${bill.bill_no} ซ้ำในไฟล์ — ใช้ครั้งเดียว`);
+      else prev.bills.push(bill);
+      return;
+    }
+    stops.set(key, { date, lines: [r.line], plate, code, name, type: dpText(r.type), address: dpText(r.address),
+      bills: bill.bill_no || bill.cases !== null ? [bill] : [], existing: false, new_store: !d.stores[code] });
+  });
+  const list = [...stops.values()];
+  const dates = [...new Set(list.map((x) => x.date))].sort();
+  if (mode === 'append') {
+    for (const st of list) {
+      const was = d.plan.find((c) => c.date === st.date && c.code === st.code);
+      if (!was) continue;
+      if (was.plate !== st.plate) errors.push(`แถว ${st.lines[0]}: ${st.name} (${st.code}) วันที่ ${st.date} อยู่ในรถ ${was.plate} แล้ว — ร้านเดียวกันส่งได้คันเดียว`);
+      else { st.existing_id = was.id; st.existing = true; }
+    }
+  }
+  const wiped = new Set(mode === 'replace' ? dates : []);
+  for (const [bill, key] of billAt) {
+    const savedOn = d.plan.find((c) => !wiped.has(c.date) && c.bills.some((b) => b.bill_no === bill));
+    const st = stops.get(key);
+    if (!savedOn || !st || st.existing_id === savedOn.id) continue;
+    errors.push(`แถว ${st.lines[0]}: บิล ${bill} มีอยู่แล้ว (ร้าน ${savedOn.code} วันที่ ${savedOn.date}) — บิลหนึ่งใบส่งได้ครั้งเดียว`);
+  }
+  for (const st of list) {
+    if (!st.existing_id) continue;
+    const have = new Set(d.plan.find((c) => c.id === st.existing_id)?.bills.map((b) => b.bill_no).filter(Boolean));
+    const before = st.bills.length;
+    st.bills = st.bills.filter((b) => b.bill_no && !have.has(b.bill_no));
+    if (st.bills.length < before) notes.push(`${st.name} (${st.date}): อยู่ในรถ ${st.plate} แล้ว — ข้าม ${before - st.bills.length} บิลที่มีอยู่แล้ว / ไม่มีเลขบิล`);
+  }
+  return { d, stops: list, dates, errors, notes };
+}
+
+export async function importDeliveryPlan(date: string, mode: 'replace' | 'append', rows: DeliveryRowIn[], commit: boolean): Promise<DeliveryImportResult> {
+  await tick();
+  const { d, stops, dates, errors, notes } = dpCheck(date, mode, rows);
+  const sumOf = (list: DpStop[]) => {
+    const bl = list.flatMap((x) => x.bills);
+    return { stores: list.length, vehicles: new Set(list.map((x) => x.plate)).size, bills: bl.length, cases: bl.reduce((n, b) => n + (b.cases ?? 0), 0) };
+  };
+  const summary = {
+    ...sumOf(stops), new_stores: new Set(stops.filter((x) => x.new_store).map((x) => x.code)).size,
+    already: stops.filter((x) => x.existing).length,
+    dates: dates.map((dt) => ({ date: dt, ...sumOf(stops.filter((x) => x.date === dt)) })),
+  };
+  const out = { stops: stops.map(({ existing_id: _e, ...x }) => x), errors, notes, summary };
+  if (!commit) return out;
+  if (errors.length) throw new Error(`ไฟล์มีปัญหา ${errors.length} รายการ — แก้ไฟล์แล้วนำเข้าใหม่`);
+  if (mode === 'replace') d.plan = d.plan.filter((p) => !dates.includes(p.date));
+  const next = new Map<string, number>();
+  for (const x of stops) {
+    const old = d.stores[x.code];
+    d.stores[x.code] = { name: x.name, type: x.type || old?.type || '', address: x.address || old?.address || '' };
+    const row = x.existing_id ? d.plan.find((p) => p.id === x.existing_id) : undefined;
+    if (row) { row.bills.push(...x.bills); continue; }
+    const n = (next.get(x.date) ?? Math.max(0, ...d.plan.filter((p) => p.date === x.date).map((p) => p.sort))) + 1;
+    next.set(x.date, n);
+    d.plan.push({ id: crypto.randomUUID(), date: x.date, plate: x.plate, code: x.code, sort: n, bills: x.bills, snap: { ...d.stores[x.code] } });
+  }
+  dpSave(d);
+  return out;
+}
+
+export async function addDeliveryStop(b: DeliveryAddIn) {
+  await tick();
+  const closed = dpClosed(b.date);
+  if (closed) throw new Error(closed);
+  const { d, stops, errors } = dpCheck(b.date, 'append', [{ line: 1, date: b.date, plate: b.plate, code: b.code, name: b.name, type: b.type, address: '', cases: b.cases, bill: b.bill }]);
+  if (errors.length) throw new Error(errors[0].replace(/^แถว 1: /, ''));
+  const st = stops[0];
+  if (!st) throw new Error('กรอกทะเบียนรถ รหัสร้าน และชื่อร้านก่อน');
+  if (st.existing_id && !st.bills.length) throw new Error(`${st.name} (${st.code}) อยู่ในรถ ${st.plate} ของวันที่ ${b.date} แล้ว`);
+  if (!d.stores[st.code]) d.stores[st.code] = { name: st.name, type: st.type, address: '' };
+  let id = st.existing_id;
+  if (id) d.plan.find((p) => p.id === id)?.bills.push(...st.bills);
+  else {
+    id = crypto.randomUUID();
+    d.plan.push({ id, date: b.date, plate: st.plate, code: st.code, sort: Math.max(0, ...d.plan.filter((p) => p.date === b.date).map((p) => p.sort)) + 1, bills: st.bills, snap: { ...d.stores[st.code] } });
+  }
+  dpSave(d);
+  return { id };
+}
+
+export async function removeDeliveryStop(id: string) {
+  await tick();
+  const d = dpLoad();
+  const row = d.plan.find((p) => p.id === id);
+  if (row) { const closed = dpClosed(row.date); if (closed) throw new Error(closed); }
+  d.plan = d.plan.filter((p) => p.id !== id);
+  dpSave(d);
+  return { ok: true as const };
+}
+
+export async function clearDeliveryPlan(date: string) {
+  await tick();
+  const closed = dpClosed(date);
+  if (closed) throw new Error(closed);
+  const d = dpLoad();
+  d.plan = d.plan.filter((p) => p.date !== date);
+  dpSave(d);
+  return { ok: true as const };
+}

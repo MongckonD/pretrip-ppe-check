@@ -39,3 +39,8 @@ bucket_name = "pretrip-inspection-photos"
 [[r2_buckets]]
 binding = "LICENSES"
 bucket_name = "pretrip-driver-licenses"
+
+# store delivery (ร้านค้าที่ต้องส่ง): "1" = API on, anything else = 404 — on since version 1.1.0
+# local development turns it on in .dev.vars
+[vars]
+FEATURE_STORE_DELIVERY = "1"

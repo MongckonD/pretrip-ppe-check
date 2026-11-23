@@ -13,6 +13,7 @@ import * as r from './routes';
 import type { Ctx, Env } from './routes';
 import * as trip from './trip-routes';
 import * as imp from './import-routes';
+import * as dp from './delivery-routes';
 
 /**
  * true  = staff must send a driving-licence photo before using anything else (no skipping)
@@ -54,6 +55,13 @@ const ROUTES: Route[] = [
   // admin: import employees + accounts from an Excel / CSV file (check first, then import)
   { m: 'POST', re: /^\/api\/import\/employees$/, h: imp.importEmployees },
   { m: 'POST', re: /^\/api\/import\/vehicles$/, h: imp.importVehicles },
+
+  // store delivery plan (hidden unless FEATURE_STORE_DELIVERY = "1")
+  { m: 'GET', re: /^\/api\/delivery-plan$/, h: dp.listDeliveryPlan },
+  { m: 'POST', re: /^\/api\/delivery-plan\/import$/, h: dp.importDeliveryPlan },
+  { m: 'POST', re: /^\/api\/delivery-plan$/, h: dp.addDeliveryStop },
+  { m: 'DELETE', re: /^\/api\/delivery-plan$/, h: dp.clearDeliveryPlan },
+  { m: 'DELETE', re: /^\/api\/delivery-plan\/([^/]+)$/, h: dp.removeDeliveryStop },
 
   { m: 'GET', re: /^\/api\/master$/, h: r.getMaster },
   { m: 'PUT', re: /^\/api\/employees\/([^/]+)$/, h: r.putEmployee },
