@@ -7,15 +7,17 @@
  *     trial version: data stays in this browser per account until the database design is agreed (components/StoreVisits.tsx)
  * Start and end are stamped by the server (trip_activities.work_started_at / work_ended_at), one record per vehicle per day.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { ReadOnlyField, thaiDay, useNow } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
-import { StoreVisits } from '../components/StoreVisits';
 import { CheckPicker, NoCheckYet, useTodayChecks } from '../components/TodayChecks';
 import { useToast } from '../components/Toast';
 import { endWork, listTripActivities, startWork } from '../lib/api';
 import type { TripActivity } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
+
+// store-delivery timer: loaded only when that (feature-switched) sub-tab is opened, so version 1 does not ship it
+const StoreVisits = lazy(() => import('../components/StoreVisits').then((m) => ({ default: m.StoreVisits })));
 
 const pad = (n: number) => String(n).padStart(2, '0');
 /** 3725 s → "01:02:05" */
@@ -83,7 +85,7 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
         <section className="panel">
           <h2>ร้านค้า · จับเวลาส่งสินค้า</h2>
           <CheckPicker checks={checks} selId={selId} onPick={setSelId} />
-          {check && <StoreVisits plate={check.plate} />}
+          {check && <Suspense fallback={<div className="empty">กำลังโหลด…</div>}><StoreVisits plate={check.plate} /></Suspense>}
         </section>
       ) : (<>
       {/* box 1: vehicle + D-Man, and the start of work */}

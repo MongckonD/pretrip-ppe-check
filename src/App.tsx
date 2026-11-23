@@ -15,6 +15,7 @@ import { ConsentScreen } from './components/Consent';
 import { DevBadge, DevGate } from './components/DevNotice';
 import { ClockIcon, IdCardIcon, StoreIcon, TimerIcon, TruckIcon, VestIcon } from './components/Icons';
 import { getMyLicense, isTestMode, type Me } from './lib/api';
+import { FEATURES } from './lib/features';
 import { LICENSE_REQUIRED, readLicenseSkip, writeLicenseSkip, type LicenseInfo } from './lib/license';
 import { errMsg } from './lib/utils';
 import { LicenseBanner, LicenseOnboarding, LicensePage } from './pages/LicensePage';
@@ -25,13 +26,19 @@ import { VehiclePage } from './pages/VehiclePage';
 const WORK_TABS: TabDef[] = [
   { key: 'veh', path: '/vehicle', label: 'ตรวจรถ', title: 'ตรวจรถก่อนออกงาน', icon: TruckIcon, render: (c) => <VehiclePage goPpe={() => c.go('ppe')} /> },
   { key: 'ppe', path: '/ppe', label: 'PPE', title: 'ตรวจ PPE พนักงาน', icon: VestIcon, render: (c) => <PpePage goVehicle={() => c.go('veh')} goTime={() => c.go('time')} /> },
-  // menu heading only: opens its first sub-tab
-  { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: () => null },
-  { key: 'time-work', parent: 'time', path: '/time-activities/work', label: 'บันทึกเวลาการทำงาน', title: 'บันทึกเวลาการทำงาน', icon: TimerIcon,
-    render: (c) => <TimeActivitiesPage sub="work" goVehicle={() => c.go('veh')} /> },
-  // store-delivery timer: still in development — staff see a notice, the trial opens only on request
-  { key: 'time-store', parent: 'time', path: '/time-activities/store', label: 'บันทึกเวลาส่งสินค้า', title: 'บันทึกเวลาส่งสินค้า', icon: StoreIcon, badge: <DevBadge />,
-    render: (c) => <DevGate id="store-visits" title="บันทึกเวลาส่งสินค้า"><TimeActivitiesPage sub="store" goVehicle={() => c.go('veh')} /></DevGate> },
+  ...(FEATURES.storeDelivery ? [
+    // menu heading only: opens its first sub-tab
+    { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon, render: () => null },
+    { key: 'time-work', parent: 'time', path: '/time-activities/work', label: 'บันทึกเวลาการทำงาน', title: 'บันทึกเวลาการทำงาน', icon: TimerIcon,
+      render: (c) => <TimeActivitiesPage sub="work" goVehicle={() => c.go('veh')} /> },
+    // store-delivery timer: still in development — staff see a notice, the trial opens only on request
+    { key: 'time-store', parent: 'time', path: '/time-activities/store', label: 'บันทึกเวลาส่งสินค้า', title: 'บันทึกเวลาส่งสินค้า', icon: StoreIcon, badge: <DevBadge />,
+      render: (c) => <DevGate id="store-visits" title="บันทึกเวลาส่งสินค้า"><TimeActivitiesPage sub="store" goVehicle={() => c.go('veh')} /></DevGate> },
+  ] satisfies TabDef[] : [
+    // version 1 (store delivery switched off): Time activities is one page, no sub-tabs
+    { key: 'time', path: '/time-activities', label: 'Time activities', short: 'Time', title: 'Time activities', icon: ClockIcon,
+      render: (c) => <TimeActivitiesPage sub="work" goVehicle={() => c.go('veh')} /> },
+  ] satisfies TabDef[]),
 ];
 
 function StaffShell({ me, onLogout, onboarding }: { me: Me | null; onLogout?: () => void; onboarding: boolean }) {

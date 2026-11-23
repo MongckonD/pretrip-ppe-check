@@ -1227,3 +1227,7 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .avatar.person svg { width: 100%; height: 100%; display: block; }
 .who-text .who-code { color: var(--muted); font-size: 14px; font-weight: 600; }
 .mbar .avatar.person { background: #fff; color: var(--brand); }
+
+/* app version under the user box in the side menu (hidden in the phone bottom bar) */
+.app-ver { font-size: 11px; color: var(--muted); text-align: center; }
+@media (max-width: 767px) { .side .app-ver { display: none; } }

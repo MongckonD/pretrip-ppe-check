@@ -10,6 +10,7 @@ import type { Master } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
 import { ChangePasswordForm, MeContext, ROLE_LABEL } from './Auth';
 import { KeyIcon, LogoutIcon, PersonAvatar } from './Icons';
+import { APP_VERSION } from '../lib/features';
 import { MasterContext, buildMasterCtx } from './MasterContext';
 
 export interface PageCtx { month: string; setMonth: (m: string) => void; go: (key: string) => void }
@@ -50,10 +51,16 @@ function resolve(tabs: TabDef[], t: TabDef): TabDef {
   return tabs.find((x) => x.parent === t.key) ?? t;
 }
 
-/** Tab for the current address; unknown paths fall back to the first tab. */
+/**
+ * Tab for the current address. A deeper path opens the tab it sits under (e.g. /time-activities/store when that
+ * sub-tab is switched off → Time activities); unknown paths fall back to the first tab.
+ */
 function tabFromUrl(tabs: TabDef[]): TabDef {
   const here = normPath(window.location.pathname);
-  return resolve(tabs, tabs.find((t) => normPath(t.path) === here) ?? tabs[0]);
+  const exact = tabs.find((t) => normPath(t.path) === here);
+  const under = tabs.filter((t) => normPath(t.path) !== '/' && here.startsWith(`${normPath(t.path)}/`))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  return resolve(tabs, exact ?? under ?? tabs[0]);
 }
 
 export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
@@ -172,7 +179,7 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
               );
             })}
           </nav>
-          <div className="side-foot">{userBox}</div>
+          <div className="side-foot">{userBox}<span className="app-ver" title="เวอร์ชันของแอป">v{APP_VERSION}</span></div>
         </aside>
 
         <div className="main-col">

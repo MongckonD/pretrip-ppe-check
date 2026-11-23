@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:store": "vite --mode store",
     "dev:cf": "vite --mode cloudflare",
     "dev:api": "wrangler dev --port 8787",
     "build": "tsc -b && vite build",

@@ -5,13 +5,16 @@
  *   3. "สถานะรถวันนี้": one tile per active vehicle, coloured by where it is in the day
  * Today's view refreshes itself every 2 minutes (only while the page is open on today).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMaster } from '../components/MasterContext';
-import { DeliveryPlan } from './DeliveryPlan';
+import { FEATURES } from '../lib/features';
 import { listLicenses, listPpeInspections, listTripActivities, listVehicleInspections } from '../lib/api';
 import type { LicenseRow } from '../lib/license';
 import type { PpeInspection, TripActivity, VehicleInspection } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
+
+// delivery plan (feature-switched): loaded only when the switch is on, so version 1 does not ship it
+const DeliveryPlan = lazy(() => import('./DeliveryPlan').then((m) => ({ default: m.DeliveryPlan })));
 
 interface Day { veh: VehicleInspection[]; ppe: PpeInspection[]; trips: TripActivity[] }
 
@@ -131,7 +134,7 @@ export function AdminHomePage({ go }: { go: (tab: string) => void }) {
       {!s && !error && <div className="empty">กำลังโหลด…</div>}
 
       {/* stores each vehicle must deliver to (trial: browser only until the database is designed) */}
-      <DeliveryPlan date={date} />
+      {FEATURES.storeDelivery && <Suspense fallback={null}><DeliveryPlan date={date} /></Suspense>}
 
       {s && (<>
         {/* 1. progress of the day */}

@@ -1,5 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+// app version (package.json), shown in the menu
+import pkg from './package.json';
 
 /** Dev server only: every /admin/... tab path loads the admin page (the Worker does this in production). */
 const adminPages: Plugin = {
@@ -15,6 +17,7 @@ const adminPages: Plugin = {
 
 export default defineConfig({
   plugins: [react(), adminPages],
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   // two web pages: staff (/) and admin (/admin/), one shared code base and one API
   build: {
     rollupOptions: {
