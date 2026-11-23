@@ -9,6 +9,7 @@ import { readSheet, toCsvBom } from '../lib/sheet';
 import { downloadText, errMsg } from '../lib/utils';
 import { useMaster } from './MasterContext';
 import { useToast } from './Toast';
+import { DownloadIcon } from './Icons';
 
 const HEAD = { plate: 'ทะเบียน', type: 'ประเภทรถ' } as const;
 const ALIASES: Record<'plate' | 'type', string[]> = {
@@ -94,7 +95,7 @@ export function ImportVehicles() {
       <ol className="imp-steps">
         <li>
           <b>ดาวน์โหลดไฟล์ตัวอย่าง</b> แล้วกรอกใน Excel (หรือใช้ไฟล์ที่ export จาก SAP ที่มีหัวคอลัมน์ตรงกัน)
-          <div className="row mt-s"><button type="button" className="btn ghost sm" onClick={template}>⬇ ไฟล์ตัวอย่าง (.csv)</button></div>
+          <div className="row mt-s"><button type="button" className="btn ghost sm" onClick={template}><span className="ii" aria-hidden><DownloadIcon /></span>ไฟล์ตัวอย่าง (.csv)</button></div>
           <details className="imp-help">
             <summary>คอลัมน์ในไฟล์</summary>
             <table className="imp-cols">

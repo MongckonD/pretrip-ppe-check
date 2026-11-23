@@ -9,7 +9,7 @@ import { ComboText } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { listPpeInspections, listVehicleInspections } from '../lib/api';
 import type { PpeInspection, PpeResult, VehicleInspection } from '../lib/types';
-import { AlertIcon, CheckCircleIcon, HourglassIcon, ListIcon, PercentIcon, UsersIcon } from '../components/Icons';
+import { AlertIcon, CheckCircleIcon, HourglassIcon, ListIcon, PercentIcon, SearchIcon, UsersIcon } from '../components/Icons';
 import { downloadText, errMsg, toCsv, today } from '../lib/utils';
 
 type Result = 'ok' | 'missing' | 'partial' | 'none';
@@ -152,7 +152,7 @@ export function PpeReportPage() {
           </div>
           <div className="row">
             <button type="button" className="btn ghost sm" onClick={() => search(todayFilters())}>ล้างตัวกรอง</button>
-            <button type="button" className="btn rp-search" onClick={() => search()}>🔍 ค้นหาข้อมูล</button>
+            <button type="button" className="btn rp-search" onClick={() => search()}><span className="ii" aria-hidden><SearchIcon /></span>ค้นหาข้อมูล</button>
           </div>
         </div>
         {msg && <div className="error">{msg}</div>}

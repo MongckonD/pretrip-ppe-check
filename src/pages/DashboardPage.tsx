@@ -11,6 +11,7 @@ import { useMaster } from '../components/MasterContext';
 import { listPpeInspections, listTripActivities, listVehicleInspections } from '../lib/api';
 import type { PpeInspection, TripActivity, VehicleInspection } from '../lib/types';
 import { daysInMonth, downloadText, errMsg, toCsv, today } from '../lib/utils';
+import { DownloadIcon } from '../components/Icons';
 
 interface Month { veh: VehicleInspection[]; ppe: PpeInspection[]; trips: TripActivity[] }
 
@@ -253,7 +254,7 @@ function Kpi({ label, value, note }: { label: string; value: string; note?: stri
 
 /** small "⬇ CSV" button */
 function DlBtn({ onClick, label = 'CSV' }: { onClick: () => void; label?: string }) {
-  return <button type="button" className="btn ghost sm ov-dl" onClick={onClick} title="ดาวน์โหลดเป็นไฟล์ CSV (เปิดใน Excel ได้)">⬇ {label}</button>;
+  return <button type="button" className="btn ghost sm ov-dl" onClick={onClick} title="ดาวน์โหลดเป็นไฟล์ CSV (เปิดใน Excel ได้)"><span className="ii" aria-hidden><DownloadIcon /></span>{label}</button>;
 }
 function PanelHead({ title, sub, onDownload }: { title: string; sub?: string; onDownload?: () => void }) {
   return (

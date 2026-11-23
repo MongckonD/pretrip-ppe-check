@@ -11,6 +11,7 @@
  * database design is agreed. Nothing is sent to the server yet.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { AlertIcon, BoxIcon, CartIcon, PhoneIcon, PinIcon, RepeatIcon, SearchIcon, StoreIcon, TruckIcon, UserIcon } from './Icons';
 import {
   ACTIVITIES, END_CODE, MOVE_METHODS, PHASES, STORE_TYPES, activityName, clock, codeSeconds, hhmm, minutes1, nextCode,
   phaseOf, phaseSeconds, segSeconds, storeTypeName, visitSeconds,
@@ -175,7 +176,7 @@ export function StoreVisits({ plate }: { plate: string }) {
       )}
       {!active && prev?.endedAt && (
         <div className="sv-travel" role="timer" aria-live="off">
-          <span>🚚 กำลังเดินทางไปร้านที่ {nextNo}</span>
+          <span><span className="ii" aria-hidden><TruckIcon /></span>กำลังเดินทางไปร้านที่ {nextNo}</span>
           <b className="mono">{clock(Math.max(0, Math.round((Date.now() - Date.parse(prev.endedAt)) / 1000)))}</b>
           <span className="note">ออกจากร้านที่ {todays.length} {prev.storeName} เมื่อ {hhmm(prev.endedAt)} น. · หยุดนับเมื่อกดเริ่มร้านถัดไป</span>
         </div>
@@ -225,7 +226,7 @@ function DeliveryFields({ d, set, autoFocus }: { d: DeliveryDraft; set: (d: Deli
         <div className="sv-methods" role="radiogroup" aria-label="วิธีขนย้าย">
           {MOVE_METHODS.map((m) => (
             <button key={m.code} type="button" role="radio" aria-checked={d.method === m.code} onClick={() => set({ ...d, method: m.code })}>
-              <span aria-hidden>{m.code === 'trolley' ? '🛒' : m.code === 'carry' ? '📦' : '🛒📦'}</span>{m.name}
+              <span className="ii" aria-hidden>{m.code === 'trolley' ? <CartIcon /> : m.code === 'carry' ? <BoxIcon /> : <><CartIcon /><BoxIcon /></>}</span>{m.name}
             </button>
           ))}
         </div>
@@ -258,7 +259,7 @@ function StoreCard({ s, h, doneToday, onChange }: { s: Store; h?: StoreHistory; 
   return (
     <div className="sv-card">
       <div className="sv-card-top">
-        <span className="sv-picked-ico" aria-hidden>🏪</span>
+        <span className="sv-picked-ico" aria-hidden><StoreIcon /></span>
         <div className="sv-picked-name">
           <b>{s.name}</b>
           <span className="sv-store-tags">
@@ -269,10 +270,10 @@ function StoreCard({ s, h, doneToday, onChange }: { s: Store; h?: StoreHistory; 
         <button type="button" className="btn ghost sm" onClick={onChange}>เปลี่ยนร้าน</button>
       </div>
       <dl className="sv-info">
-        <div><dt>📍 ที่อยู่</dt><dd>{s.address || '–'}</dd></div>
-        <div><dt>👤 ผู้ติดต่อ</dt><dd>{s.contact || '–'}
-          {s.phone && <> · <a href={`tel:${s.phone.replace(/[^\d+]/g, '')}`}>📞 {s.phone}</a></>}</dd></div>
-        {s.note && <div className="warn"><dt>⚠️ จุดลงของ / หมายเหตุ</dt><dd>{s.note}</dd></div>}
+        <div><dt><span className="ii" aria-hidden><PinIcon /></span>ที่อยู่</dt><dd>{s.address || '–'}</dd></div>
+        <div><dt><span className="ii" aria-hidden><UserIcon /></span>ผู้ติดต่อ</dt><dd>{s.contact || '–'}
+          {s.phone && <> · <a href={`tel:${s.phone.replace(/[^\d+]/g, '')}`}><span className="ii" aria-hidden><PhoneIcon /></span>{s.phone}</a></>}</dd></div>
+        {s.note && <div className="warn"><dt><span className="warn-ico" aria-hidden><AlertIcon /></span>จุดลงของ / หมายเหตุ</dt><dd>{s.note}</dd></div>}
       </dl>
       <div className="sv-hist">
         {h ? (<>
@@ -335,7 +336,7 @@ function StartVisit({ no, stores, visits, doneToday, onStart, onAddStore }: {
         ) : (
           <>
             <div className="sv-mode" role="tablist" aria-label="วิธีเลือกร้าน">
-              <button type="button" role="tab" aria-selected={mode === 'list'} onClick={() => setMode('list')}>🔍 ร้านที่มีในระบบ</button>
+              <button type="button" role="tab" aria-selected={mode === 'list'} onClick={() => setMode('list')}><span className="ii" aria-hidden><SearchIcon /></span>ร้านที่มีในระบบ</button>
               <button type="button" role="tab" aria-selected={mode === 'new'} onClick={() => openNew(q)}>＋ ร้านใหม่</button>
             </div>
 
@@ -347,7 +348,7 @@ function StartVisit({ no, stores, visits, doneToday, onStart, onAddStore }: {
                     <button key={s.id} type="button" role="option" aria-selected={false} className="sv-store" onClick={() => setSel(s)}>
                       <span className="sv-store-name">
                         <span className="sv-store-line"><b>{s.name}</b><span className={`sv-type t-${s.type}`}>{storeTypeName(s.type)}</span></span>
-                        {s.address && <small>📍 {s.address}</small>}
+                        {s.address && <small><span className="ii" aria-hidden><PinIcon /></span>{s.address}</small>}
                         <small>
                           {hist.has(s.id) ? <>ส่งแล้ว {hist.get(s.id)!.count} ครั้ง · เฉลี่ย {minutes1(hist.get(s.id)!.avgSec)} นาที</> : 'ยังไม่เคยส่ง'}
                         </small>
@@ -369,7 +370,7 @@ function StartVisit({ no, stores, visits, doneToday, onStart, onAddStore }: {
                 {ql && doneHits.length > 0 && (
                   <div className="sv-already" role="status">
                     {doneHits.map((s) => (
-                      <div key={s.id}>⚠️ <b>{s.name}</b> ส่งไปแล้ววันนี้ ({doneLine(s)}) — เลือกซ้ำไม่ได้</div>
+                      <div key={s.id}><span className="warn-ico" aria-hidden><AlertIcon /></span><b>{s.name}</b> ส่งไปแล้ววันนี้ ({doneLine(s)}) — เลือกซ้ำไม่ได้</div>
                     ))}
                   </div>
                 )}
@@ -384,7 +385,7 @@ function StartVisit({ no, stores, visits, doneToday, onStart, onAddStore }: {
                 <label>ชื่อร้าน<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ร้านสมใจ" autoFocus /></label>
                 {same && (sameDone ? (
                   <div className="sv-already" role="status">
-                    <div>⚠️ <b>{same.name}</b> มีในระบบและส่งไปแล้ววันนี้ ({doneLine(same)}) — เพิ่มหรือเลือกซ้ำไม่ได้</div>
+                    <div><span className="warn-ico" aria-hidden><AlertIcon /></span><b>{same.name}</b> มีในระบบและส่งไปแล้ววันนี้ ({doneLine(same)}) — เพิ่มหรือเลือกซ้ำไม่ได้</div>
                   </div>
                 ) : (
                   <div className="sv-same">
@@ -488,7 +489,7 @@ function RunningVisit({ no, v, onGo, onUndo, onCancel }: {
       {again.length > 0 && (
         <div className="sv-again">
           {again.map((c) => (
-            <button key={c} type="button" className="btn ghost" onClick={() => onGo(c)}>🔁 อีกรอบ · {c === 'B02' ? 'เดินยก' : 'เข็นรถเข็น'}</button>
+            <button key={c} type="button" className="btn ghost" onClick={() => onGo(c)}><span className="ii" aria-hidden><RepeatIcon /></span>อีกรอบ · {c === 'B02' ? 'เดินยก' : 'เข็นรถเข็น'}</button>
           ))}
         </div>
       )}
@@ -589,7 +590,7 @@ function EndVisit({ no, v, onSave, onResume }: {
       <PhaseBar per={phaseSeconds(v)} />
       {editing ? <DeliveryFields d={d} set={setD} autoFocus /> : (
         <div className="sv-picked">
-          <span className="sv-picked-ico" aria-hidden>📦</span>
+          <span className="sv-picked-ico" aria-hidden><BoxIcon /></span>
           <div className="sv-picked-name"><span className="ro-label">ข้อมูลการส่ง</span><b>{deliveryText(deliveryOf(d))}</b></div>
           <button type="button" className="btn ghost sm" onClick={() => setEditing(true)}>แก้ไข</button>
         </div>
@@ -625,7 +626,7 @@ function TodayVisits({ visits }: { visits: StoreVisit[] }) {
         <span><b>{minutes1(totals.secs / visits.length)}</b> นาที/ร้าน</span>
         <span><b>{totals.cases}</b> ลัง</span>
         {totals.cases > 0 && <span><b>{(totals.secs / 60 / totals.cases).toFixed(2)}</b> นาที/ลัง</span>}
-        {totals.legs > 0 && <span>🚚 <b>{minutes1(totals.travel)}</b> นาทีเดินทางรวม</span>}
+        {totals.legs > 0 && <span><span className="ii" aria-hidden><TruckIcon /></span><b>{minutes1(totals.travel)}</b> นาทีเดินทางรวม</span>}
         {totals.legs > 0 && <span><b>{minutes1(totals.travel / totals.legs)}</b> นาที/ช่วงเดินทาง</span>}
       </div>
       <ul className="sv-list">
@@ -634,7 +635,7 @@ function TodayVisits({ visits }: { visits: StoreVisit[] }) {
           return (
             <li key={v.id}>
               {v.travelFrom && (
-                <div className="sv-leg">🚚 เดินทางจากร้านที่ {no - 1} ({v.travelFrom.storeName}) <b className="mono">{minutes1(v.travelFrom.seconds)} นาที</b></div>
+                <div className="sv-leg"><span className="ii" aria-hidden><TruckIcon /></span>เดินทางจากร้านที่ {no - 1} ({v.travelFrom.storeName}) <b className="mono">{minutes1(v.travelFrom.seconds)} นาที</b></div>
               )}
               <div className="row spread">
                 <div><span className="sv-no">ร้านที่ {no}</span> <b>{v.storeName}</b> <span className={`sv-type t-${v.storeType}`}>{storeTypeName(v.storeType)}</span></div>

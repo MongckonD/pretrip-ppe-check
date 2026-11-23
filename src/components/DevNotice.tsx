@@ -4,6 +4,7 @@
  * Used by the store-delivery timer until its database design is agreed.
  */
 import { useState, type ReactNode } from 'react';
+import { AlertIcon } from './Icons';
 
 export function DevBadge() {
   // construction-sign look: black / yellow stripes around the text
@@ -19,7 +20,7 @@ export function DevGate({ id, title, children }: { id: string; title: string; ch
     return (
       <>
         <div className="dev-strip" role="note">
-          <span>🚧 <b>{title}</b> อยู่ระหว่างพัฒนา — นี่คือหน้าตัวอย่าง ยังไม่ใช้บันทึกงานจริง</span>
+          <span><span className="warn-ico" aria-hidden><AlertIcon /></span><b>{title}</b> อยู่ระหว่างพัฒนา — นี่คือหน้าตัวอย่าง ยังไม่ใช้บันทึกงานจริง</span>
           <button type="button" className="btn ghost sm" onClick={() => set(false)}>ปิดตัวอย่าง</button>
         </div>
         {children}
@@ -28,7 +29,7 @@ export function DevGate({ id, title, children }: { id: string; title: string; ch
   }
   return (
     <section className="panel dev-notice">
-      <div className="dev-notice-ico" aria-hidden>🚧</div>
+      <div className="dev-notice-ico" aria-hidden><AlertIcon /></div>
       <DevBadge />
       <h2>{title}</h2>
       <p>ฟีเจอร์นี้<b>อยู่ระหว่างพัฒนา</b> ยังไม่เปิดใช้ในงานจริง<br />ตอนนี้ยังไม่ต้องบันทึกอะไรในหน้านี้</p>

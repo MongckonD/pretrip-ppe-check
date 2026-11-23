@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ComboText, useSignedUrls } from '../components/Fields';
-import { AlertIcon, BadgeCheckIcon, CheckCircleIcon, HourglassIcon, ImageIcon, ListIcon, XCircleIcon } from '../components/Icons';
+import { AlertIcon, BadgeCheckIcon, CheckCircleIcon, HourglassIcon, ImageIcon, ListIcon, SearchIcon, XCircleIcon } from '../components/Icons';
 import { Lightbox, type LightboxPhoto } from '../components/Lightbox';
 import { useMaster } from '../components/MasterContext';
 import { useToast } from '../components/Toast';
@@ -188,7 +188,7 @@ export function VehicleStatusPage() {
           </div>
           <div className="row">
             <button type="button" className="btn ghost sm" onClick={() => search(todayFilters())}>ล้างตัวกรอง</button>
-            <button type="button" className="btn rp-search" onClick={() => search()}>🔍 ค้นหาข้อมูล</button>
+            <button type="button" className="btn rp-search" onClick={() => search()}><span className="ii" aria-hidden><SearchIcon /></span>ค้นหาข้อมูล</button>
           </div>
         </div>
         {msg && <div className="error">{msg}</div>}

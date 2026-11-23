@@ -14,7 +14,7 @@ import { readSheet, toCsvBom } from '../lib/sheet';
 import { downloadText, errMsg, today } from '../lib/utils';
 import { CfgHead } from './CfgUi';
 import { ImportVehicles } from './ImportVehicles';
-import { TableIcon } from './Icons';
+import { DownloadIcon, TableIcon } from './Icons';
 import { useMaster } from './MasterContext';
 import { useToast } from './Toast';
 
@@ -140,7 +140,7 @@ export function ImportEmployees() {
         <ol className="imp-steps">
           <li>
             <b>ดาวน์โหลดไฟล์ตัวอย่าง</b> แล้วกรอกใน Excel (หรือใช้ไฟล์ที่ export จาก SAP ที่มีหัวคอลัมน์ตรงกัน)
-            <div className="row mt-s"><button type="button" className="btn ghost sm" onClick={template}>⬇ ไฟล์ตัวอย่าง (.csv)</button></div>
+            <div className="row mt-s"><button type="button" className="btn ghost sm" onClick={template}><span className="ii" aria-hidden><DownloadIcon /></span>ไฟล์ตัวอย่าง (.csv)</button></div>
             <details className="imp-help">
               <summary>คอลัมน์ในไฟล์</summary>
               <table className="imp-cols">
@@ -197,7 +197,7 @@ export function ImportEmployees() {
                   <thead><tr><th>รหัสพนักงาน</th><th>ชื่อ</th><th>รหัสผ่านชั่วคราว</th></tr></thead>
                   <tbody>{withPw.map((r) => <tr key={r.code}><td className="mono">{r.code}</td><td>{r.name}</td><td className="mono"><b>{r.temp_password}</b></td></tr>)}</tbody>
                 </table>
-                <div className="row"><button type="button" className="btn sm" onClick={downloadPasswords}>⬇ ดาวน์โหลดรายชื่อ + รหัสผ่าน (.csv)</button></div>
+                <div className="row"><button type="button" className="btn sm" onClick={downloadPasswords}><span className="ii" aria-hidden><DownloadIcon /></span>ดาวน์โหลดรายชื่อ + รหัสผ่าน (.csv)</button></div>
               </div>
             )}
             <ResultTable rows={done} />

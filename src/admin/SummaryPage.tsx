@@ -11,7 +11,7 @@ import { ComboText } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { listPpeInspections, listTripActivities, listVehicleInspections } from '../lib/api';
 import type { PpeInspection, TripActivity, VehicleInspection } from '../lib/types';
-import { AlertIcon, CheckCircleIcon, HourglassIcon, ListIcon } from '../components/Icons';
+import { AlertIcon, CheckCircleIcon, HourglassIcon, ListIcon, SearchIcon, TimerIcon } from '../components/Icons';
 import { downloadText, errMsg, toCsv, today } from '../lib/utils';
 
 interface Data { veh: VehicleInspection[]; ppe: PpeInspection[]; trips: TripActivity[] }
@@ -165,7 +165,7 @@ export function SummaryPage() {
           </label>
           <div className="rp-field">
             <span className="ro-label">ชั่วโมงทำงานของพนักงาน</span>
-            <button type="button" className="btn rp-hours-btn" onClick={() => setHoursOpen(true)}>⏱ กดเพื่อดูชั่วโมงรวม</button>
+            <button type="button" className="btn rp-hours-btn" onClick={() => setHoursOpen(true)}><span className="ii" aria-hidden><TimerIcon /></span>กดเพื่อดูชั่วโมงรวม</button>
           </div>
         </div>
         <div className="row spread rp-actions">
@@ -177,7 +177,7 @@ export function SummaryPage() {
           </div>
           <div className="row">
             <button type="button" className="btn ghost sm" onClick={() => search(thisMonth())}>ล้างตัวกรอง</button>
-            <button type="button" className="btn rp-search" onClick={() => search()}>🔍 ค้นหาข้อมูล</button>
+            <button type="button" className="btn rp-search" onClick={() => search()}><span className="ii" aria-hidden><SearchIcon /></span>ค้นหาข้อมูล</button>
           </div>
         </div>
         {msg && <div className="error">{msg}</div>}
@@ -264,7 +264,7 @@ function HoursDialog({ from: from0, to: to0, onClose }: { from: string; to: stri
     <div className="dlg-back" onClick={onClose}>
       <div className="dlg" role="dialog" aria-modal="true" aria-label="ชั่วโมงรวมของพนักงาน" onClick={(e) => e.stopPropagation()}>
         <div className="row spread dlg-head">
-          <h2 className="flush">⏱ ชั่วโมงรวมของพนักงาน</h2>
+          <h2 className="flush"><span className="ii" aria-hidden><TimerIcon /></span>ชั่วโมงรวมของพนักงาน</h2>
           <button type="button" className="btn ghost sm" onClick={onClose} aria-label="ปิด">✕ ปิด</button>
         </div>
         <div className="row dlg-range">

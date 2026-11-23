@@ -13,6 +13,7 @@ import { useToast } from '../components/Toast';
 import { readSheet, toCsvBom } from '../lib/sheet';
 import { STORE_TYPES, storeTypeName, type StoreType } from '../lib/storeVisit';
 import { downloadText, errMsg } from '../lib/utils';
+import { DownloadIcon } from '../components/Icons';
 
 export interface PlanStop {
   id: string; plate: string; seq: number;
@@ -236,7 +237,7 @@ export function DeliveryPlan({ date }: { date: string }) {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); }} />
           <button type="button" className="btn sm" onClick={() => fileRef.current?.click()}>นำเข้าไฟล์จาก SAP</button>
           <button type="button" className="btn ghost sm" onClick={() => setAdding((a) => !a)}>＋ เพิ่มร้านค้า</button>
-          <button type="button" className="btn ghost sm" onClick={template}>⬇ ไฟล์ตัวอย่าง</button>
+          <button type="button" className="btn ghost sm" onClick={template}><span className="ii" aria-hidden><DownloadIcon /></span>ไฟล์ตัวอย่าง</button>
           {stops.length > 0 && <button type="button" className="btn ghost sm" onClick={() => setOpen((o) => !o)}>{open ? 'ซ่อนรายการ' : 'แสดงรายการ'}</button>}
         </div>
       </div>

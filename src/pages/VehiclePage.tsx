@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { notifyVehicleCheckChanged } from '../components/CheckStatus';
 import { useMe } from '../components/Auth';
 import { useMaster } from '../components/MasterContext';
 import { EmployeeSelect, PlateInput, ReadOnlyField, Seg, fromIso, thaiClock, thaiDay, useNow, useSignedUrls } from '../components/Fields';
+import { CheckCircleIcon, HourglassIcon, RefreshIcon, XCircleIcon } from '../components/Icons';
 import { useToast } from '../components/Toast';
 import { listVehicleInspections, removePhotos, saveVehicleInspection, uploadPhoto } from '../lib/api';
 import { shrinkImage } from '../lib/image';
 import type { VehicleForm, VehicleInspection, VehResult } from '../lib/types';
-import { PHOTO_STATUS, countBy, errMsg, nowTime, pad2, photoStatus, today } from '../lib/utils';
+import { countBy, errMsg, nowTime, pad2, today } from '../lib/utils';
 
 // ผ่าน / ไม่ผ่าน only (N/A removed). ไม่ผ่าน opens a note (required) + photo (optional) for that item.
 const VEH_OPTS = [
@@ -38,12 +39,39 @@ const writeKey = (v: string | null) => {
 };
 
 /**
+ * Draft of the form, so nothing is lost when the user leaves the tab (or reloads) before sending:
+ * localStorage per account and per check ('new' or the id of a sent check being fixed); only today's draft is used.
+ */
+const draftKey = (userId: string | undefined, checkId: string | null | undefined) => `veh-draft-v1:${userId ?? '-'}:${checkId ?? 'new'}`;
+interface Draft { f: VehicleForm; fresh: string[] }
+function readDraft(key: string): Draft | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(key) ?? 'null') as Draft | null;
+    return d && d.f?.date === today() ? d : null;
+  } catch { return null; }
+}
+const writeDraft = (key: string, d: Draft | null) => {
+  try { if (d) localStorage.setItem(key, JSON.stringify(d)); else localStorage.removeItem(key); } catch { /* storage unavailable */ }
+};
+/** something was filled in (an untouched form is not worth keeping) */
+const hasInput = (f: VehicleForm) => !!(f.plate || f.mileage || f.note || f.dman || f.h1 || f.h2
+  || Object.keys(f.results).length || Object.keys(f.photos).length);
+
+/** sessionStorage: the sent check being fixed, so coming back to the tab reopens the fix instead of the summary */
+const EDIT_KEY = 'veh-editing';
+const readEdit = () => { try { return sessionStorage.getItem(EDIT_KEY); } catch { return null; } };
+const writeEdit = (v: string | null) => {
+  try { if (v) sessionStorage.setItem(EDIT_KEY, v); else sessionStorage.removeItem(EDIT_KEY); } catch { /* ignore */ }
+};
+
+/**
  * Vehicle-check tab. Once I have sent a check today, the tab shows its summary (pass / fail, waiting for approval)
  * — also after switching tabs or reloading — instead of a blank form. "ตรวจรถคันอื่น" opens the form for the next
  * vehicle; from the summary the team goes on to PPE (goPpe).
  */
 export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
   const me = useMe();
+  const toast = useToast();
   // undefined = still loading; null = show the form
   const [summary, setSummary] = useState<VehicleInspection | null | undefined>(undefined);
   // a sent check being fixed (after ไม่อนุมัติ, or before it is approved)
@@ -57,6 +85,9 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
         .sort((a, b) => (b.updated_at ?? b.inspect_time ?? '').localeCompare(a.updated_at ?? a.inspect_time ?? ''));
       const latest = mine[0];
       setSummary(latest && readKey() !== latest.id ? latest : null);
+      // was fixing a sent check when the tab was left: go back into it
+      const fixing = mine.find((r) => r.id === readEdit() && !r.approved_at);
+      if (fixing) setEditing(fixing); else writeEdit(null);
     }).catch(() => { if (alive) setSummary(null); });
     return () => { alive = false; };
   }, [me]);
@@ -65,14 +96,23 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
   if (summary && !editing) {
     return (
       <CheckSummary r={summary} onPpe={goPpe}
-        onEdit={summary.approved_at ? undefined : () => setEditing(summary)}
-        onAnother={() => { writeKey(summary.id); setSummary(null); }} />
+        onEdit={summary.approved_at ? undefined : () => { writeEdit(summary.id); setEditing(summary); }}
+        onAnother={() => { writeKey(summary.id); setSummary(null); }}
+        onRefresh={async () => {
+          // fetch this check again (approved / rejected by the supervisor since it was sent?)
+          try {
+            const list = await listVehicleInspections({ date: summary.inspect_date });
+            const now = list.find((x) => x.id === summary.id);
+            if (now) setSummary(now);
+            notifyVehicleCheckChanged();
+          } catch (e) { toast('โหลดข้อมูลไม่สำเร็จ: ' + errMsg(e)); }
+        }} />
     );
   }
   return (
     <VehicleForm key={editing?.id ?? 'new'} initial={editing ? formFrom(editing) : undefined}
-      onCancelEdit={editing ? () => setEditing(null) : undefined}
-      onSaved={(r) => { writeKey(null); setEditing(null); setSummary(r); notifyVehicleCheckChanged(); }} />
+      onCancelEdit={editing ? () => { writeEdit(null); setEditing(null); } : undefined}
+      onSaved={(r) => { writeKey(null); writeEdit(null); setEditing(null); setSummary(r); notifyVehicleCheckChanged(); }} />
   );
 }
 
@@ -84,13 +124,32 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
   const items = checkItems.filter((i) => i.active);
   const total = items.length;
 
-  const [f, setF] = useState<VehicleForm>(() => initial ?? blankForm());
+  const me = useMe();
+  const dKey = draftKey(me?.id, initial?.id);
+  // what was filled in before leaving the tab comes back (photos already uploaded included)
+  const [restored] = useState(() => readDraft(dKey));
+  const [f, setF] = useState<VehicleForm>(() => restored?.f ?? initial ?? blankForm());
   // today's records: not shown on this page, only used to warn before replacing a plate's earlier check
   const [records, setRecords] = useState<VehicleInspection[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
   // photos uploaded in this form session but not yet saved; cleaned up when replaced/removed
-  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set(restored?.fresh ?? []));
+
+  // keep the draft on every change; a fresh untouched new form leaves nothing behind
+  const sent = useRef(false); // after sending, the draft is gone for good
+  useEffect(() => {
+    if (sent.current) return;
+    writeDraft(dKey, initial || hasInput(f) ? { f, fresh: [...fresh] } : null);
+  }, [dKey, f, fresh, initial]);
+
+  /** start over: drop what was filled in (photos uploaded in this form are removed) */
+  function clearForm() {
+    if (!window.confirm('ล้างข้อมูลที่กรอกไว้ทั้งหมดในฟอร์มนี้?')) return;
+    if (fresh.size) removePhotos([...fresh]).catch(() => {});
+    setFresh(new Set());
+    setF(initial ?? blankForm());
+  }
 
   const reload = useCallback(async () => {
     try { setRecords(await listVehicleInspections({ date: f.date })); }
@@ -107,7 +166,6 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
   const done = Object.keys(f.results).length;
   const fails = countBy(f.results, 2);
   const photoCount = Object.keys(f.photos).length;
-  const pStatus = photoStatus(photoCount, photoSlots.length);
 
   const defectPhotos = Object.values(f.defects).flatMap((d) => (d.photo ? [d.photo] : []));
   const formUrls = useSignedUrls([...Object.values(f.photos), ...defectPhotos]);
@@ -182,7 +240,7 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
   }
 
   async function save() {
-    if (!f.dman || !f.plate.trim()) return toast('เลือก D-Man และกรอกทะเบียนรถก่อน');
+    if (!f.dman || !f.plate.trim()) return toast('เลือก D-Man และทะเบียนรถก่อน');
     const crew = [f.dman, f.h1, f.h2].filter(Boolean);
     if (new Set(crew).size !== crew.length) return toast('D-Man และ Helper ต้องเป็นคนละคนกัน');
     if (!done) return toast('ยังไม่ได้ตรวจรายการใด');
@@ -198,6 +256,8 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
     setSaving(true);
     try {
       const id = await saveVehicleInspection({ ...f, date: today(), time: nowTime() });
+      sent.current = true;
+      writeDraft(dKey, null);
       setFresh(new Set());
       setF(blankForm({ date: f.date, dman: f.dman, h1: f.h1, h2: f.h2 }));
       toast('ส่งข้อมูลการตรวจรถแล้ว');
@@ -296,17 +356,15 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
           );
         })}
       </div>
-      <p className="note">
-        ส่งภาพเข้าระบบ: <span className={`pill ${pStatus === 1 ? 'p' : pStatus === 2 ? 'x' : 'f'}`}>{PHOTO_STATUS[pStatus]}</span>{' '}
-        (อัปโหลดครบ {photoSlots.length} รูปถึงจะนับว่าส่งครบ)
-      </p>
 
       <div className="row spread mt">
         <span className={`note ${fails ? 'fail-text' : ''}`}>
-          {fails ? `พบ ${fails} ข้อไม่ผ่าน ผลตรวจ: ไม่ผ่าน` : done ? 'ผลตรวจ: ผ่าน' : 'ยังไม่ได้ตรวจ'}
+          {fails ? `พบ ${fails} ข้อไม่ผ่าน ผลตรวจ: ไม่ผ่าน` : done ? 'ผลตรวจ: ผ่าน' : ''}
         </span>
         <div className="row">
-          {onCancelEdit && <button className="btn ghost" type="button" disabled={saving} onClick={onCancelEdit}>ยกเลิกการแก้ไข</button>}
+          {!f.id && hasInput(f) && <button className="btn ghost" type="button" disabled={saving || uploading !== null} onClick={clearForm}>ล้างฟอร์ม</button>}
+          {onCancelEdit && <button className="btn ghost" type="button" disabled={saving}
+            onClick={() => { writeDraft(dKey, null); sent.current = true; onCancelEdit(); }}>ยกเลิกการแก้ไข</button>}
           <button className="btn" type="button" disabled={saving || uploading !== null} onClick={save}>
             {saving ? 'กำลังบันทึก…' : f.id ? 'ส่งข้อมูลที่แก้ไขอีกครั้ง' : 'บันทึกการตรวจ'}
           </button>
@@ -317,10 +375,20 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
 }
 
 /** Shown right after sending a vehicle check: what was recorded and that it now waits for review/approval. */
-function CheckSummary({ r, onPpe, onAnother, onEdit }: {
-  r: VehicleInspection; onPpe?: () => void; onAnother: () => void; onEdit?: () => void;
+function CheckSummary({ r, onPpe, onAnother, onEdit, onRefresh }: {
+  r: VehicleInspection; onPpe?: () => void; onAnother: () => void; onEdit?: () => void; onRefresh: () => Promise<void>;
 }) {
   const { checkItems, photoSlots, nameOf } = useMaster();
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try { await onRefresh(); } finally { setRefreshing(false); }
+  };
+  const refreshBtn = (
+    <button type="button" className="btn ghost sm sum-refresh" disabled={refreshing} onClick={refresh}>
+      <span className="ii" aria-hidden><RefreshIcon /></span>{refreshing ? 'กำลังโหลด…' : 'รีเฟรช'}
+    </button>
+  );
   const total = checkItems.filter((i) => i.active).length;
   const itemName = new Map(checkItems.map((i) => [i.item_no, i.name]));
   const failed = Object.entries(r.results ?? {}).filter(([, v]) => v === 2).map(([k]) => ({
@@ -338,20 +406,22 @@ function CheckSummary({ r, onPpe, onAnother, onEdit }: {
     <section className="panel sum">
       {r.rejected_at ? (
         <div className="sum-status bad" role="status">
-          <span className="sum-icon" aria-hidden="true">✕</span>
+          <span className="sum-icon" aria-hidden="true"><XCircleIcon /></span>
           <div>
             <b>ไม่อนุมัติ</b>
             <span>เหตุผล: {r.reject_reason || '—'}</span>
             <span className="sum-status-hint">กด "แก้ไขการตรวจคันนี้" แก้ตามเหตุผลแล้วส่งอีกครั้ง — สถานะจะกลับเป็นรออนุมัติ</span>
           </div>
+          {refreshBtn}
         </div>
       ) : (
         <div className={`sum-status ${approved ? 'ok' : 'wait'}`} role="status">
-          <span className="sum-icon" aria-hidden="true">{approved ? '✓' : '⏳'}</span>
+          <span className="sum-icon" aria-hidden="true">{approved ? <CheckCircleIcon /> : <HourglassIcon />}</span>
           <div>
             <b>{approved ? 'อนุมัติแล้ว' : 'ส่งข้อมูลแล้ว · รอการตรวจสอบ / รอการอนุมัติ'}</b>
-            <span>{approved ? 'หัวหน้าตรวจสอบและอนุมัติแล้ว' : 'ผลการตรวจนี้จะถูกตรวจสอบและอนุมัติโดยหัวหน้า'}</span>
+            {approved && <span>หัวหน้าตรวจสอบและอนุมัติแล้ว</span>}
           </div>
+          {refreshBtn}
         </div>
       )}
 

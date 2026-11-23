@@ -235,22 +235,17 @@ export function ReadOnlyField({ label, value }: { label: string; value: string }
 
 export function PlateInput(props: { value: string; onChange: (v: string) => void; id?: string }) {
   const { vehicles } = useMaster();
-  const listId = `${props.id ?? 'plate'}-list`;
+  const active = vehicles.filter((v) => v.active).sort((a, b) => a.plate.localeCompare(b.plate, 'th'));
+  // a check being fixed may name a vehicle that is no longer active: keep it selectable
+  const missing = props.value && !active.some((v) => v.plate === props.value);
   return (
-    <>
-      <input
-        id={props.id}
-        list={listId}
-        value={props.value}
-        placeholder="เช่น 1กก 1234"
-        onChange={(e) => props.onChange(e.target.value)}
-      />
-      <datalist id={listId}>
-        {vehicles.filter((v) => v.active).map((v) => (
-          <option key={v.id} value={v.plate}>{v.type}</option>
-        ))}
-      </datalist>
-    </>
+    <select id={props.id} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
+      <option value="">เลือกทะเบียนรถ</option>
+      {missing && <option value={props.value}>{props.value}</option>}
+      {active.map((v) => (
+        <option key={v.id} value={v.plate}>{v.type ? `${v.plate} · ${v.type}` : v.plate}</option>
+      ))}
+    </select>
   );
 }
 

@@ -205,3 +205,65 @@ export const PercentIcon = () => (
     <circle cx="7" cy="7" r="2.3" /><circle cx="17" cy="17" r="2.3" />
   </Svg>
 );
+/** search */
+export const SearchIcon = () => (
+  <Svg>
+    <circle cx="10.5" cy="10.5" r="6" />
+    <path d="m15 15 5 5" />
+  </Svg>
+);
+/** address / location */
+export const PinIcon = () => (
+  <Svg>
+    <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" />
+    <circle cx="12" cy="10" r="2.3" />
+  </Svg>
+);
+/** phone */
+export const PhoneIcon = () => (
+  <Svg>
+    <path d="M6.5 3.5h3l1.5 4-2 1.3a10 10 0 0 0 5.2 5.2l1.3-2 4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2z" />
+  </Svg>
+);
+/** goods / carried by hand */
+export const BoxIcon = () => (
+  <Svg>
+    <path d="M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4z" />
+    <path d="M3.5 7.5 12 11.5l8.5-4M12 11.5v9" />
+  </Svg>
+);
+/** trolley */
+export const CartIcon = () => (
+  <Svg>
+    <path d="M3 4.5h2.5l2 10.5h10.5l2-7.5H6.6" />
+    <circle cx="9" cy="19" r="1.4" /><circle cx="17" cy="19" r="1.4" />
+  </Svg>
+);
+/** one more round */
+export const RepeatIcon = () => (
+  <Svg>
+    <path d="M4.5 11.5a7.5 7.5 0 0 1 13-5l2 2M19.5 12.5a7.5 7.5 0 0 1-13 5l-2-2" />
+    <path d="M19.5 4v4.5H15M4.5 20v-4.5H9" />
+  </Svg>
+);
+/** download */
+export const DownloadIcon = () => (
+  <Svg>
+    <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" />
+    <path d="M4.5 19.5h15" />
+  </Svg>
+);
+/** refresh */
+export const RefreshIcon = () => (
+  <Svg>
+    <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+    <path d="M19.5 4.5v4h-4" />
+  </Svg>
+);
+/** filled person silhouette for the signed-in user's avatar (head + shoulders, clipped by the round avatar) */
+export const PersonAvatar = () => (
+  <svg viewBox="0 0 40 40" width="100%" height="100%" aria-hidden="true" focusable="false">
+    <circle cx="20" cy="15" r="7" fill="currentColor" />
+    <path d="M6.5 37c1.2-7.4 6.6-11.5 13.5-11.5S32.3 29.6 33.5 37z" fill="currentColor" />
+  </svg>
+);

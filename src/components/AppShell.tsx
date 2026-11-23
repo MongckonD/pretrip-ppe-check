@@ -9,7 +9,7 @@ import { isTestMode, loadMaster, type Me } from '../lib/api';
 import type { Master } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
 import { ChangePasswordForm, MeContext, ROLE_LABEL } from './Auth';
-import { KeyIcon, LogoutIcon } from './Icons';
+import { KeyIcon, LogoutIcon, PersonAvatar } from './Icons';
 import { MasterContext, buildMasterCtx } from './MasterContext';
 
 export interface PageCtx { month: string; setMonth: (m: string) => void; go: (key: string) => void }
@@ -103,18 +103,20 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
 
   const togglePw = () => { setPwOpen((o) => !o); setPwDone(false); };
   // who is signed in: the employee's name (never the internal account id)
-  const who = (me && (master?.employees.find((e) => e.id === me.employee_id)?.name || me.display_name)) || 'ผู้ใช้';
+  const meEmp = me ? master?.employees.find((e) => e.id === me.employee_id) : undefined;
+  const who = (me && (meEmp?.name || me.display_name)) || 'ผู้ใช้';
+  const whoCode = meEmp?.code ?? '';
   const userBox = isTestMode ? (
     <>
       <span className="test-badge" title="ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น ยังไม่ได้เชื่อม Cloudflare">โหมดทดสอบ</span>
     </>
   ) : me && (
     <>
-      <div className="who" title={`${who} · ${ROLE_LABEL[me.role]}`}>
-        <span className="avatar" aria-hidden="true">{who.slice(0, 1).toUpperCase()}</span>
+      <div className="who" title={`${who}${whoCode ? ` · ${whoCode}` : ''} · ${ROLE_LABEL[me.role]}`}>
+        <span className="avatar person" aria-hidden="true"><PersonAvatar /></span>
         <span className="who-text">
           <b>{who}</b>
-          <span>{ROLE_LABEL[me.role]}</span>
+          {whoCode ? <b className="mono who-code">{whoCode}</b> : <span>{ROLE_LABEL[me.role]}</span>}
         </span>
       </div>
       <div className="who-actions">
@@ -175,8 +177,20 @@ export function AppShell({ me, onLogout, tabs, brandSub, banner }: ShellProps) {
 
         <div className="main-col">
           <div className="page-head">
-            <h1>{current.title}</h1>
-            <span className="note">{new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            <div className="page-title">
+              <h1>{current.title}</h1>
+              <span className="note">{new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            </div>
+            {/* iPad: the icon rail has no room for the name, so who is signed in sits here */}
+            {me && !isTestMode && (
+              <div className="head-who" title={`${who}${whoCode ? ` · ${whoCode}` : ''} · ${ROLE_LABEL[me.role]}`}>
+                <span className="who-text">
+                  <b>{who}</b>
+                  {whoCode ? <b className="mono who-code">{whoCode}</b> : <span>{ROLE_LABEL[me.role]}</span>}
+                </span>
+                <span className="avatar person" aria-hidden="true"><PersonAvatar /></span>
+              </div>
+            )}
           </div>
           <main className="content">
             {/* sub-tabs on tablet / phone, where the rail and bottom bar have no room for them */}

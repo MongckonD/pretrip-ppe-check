@@ -11,6 +11,7 @@ import { useToast } from '../components/Toast';
 import { listPpeInspections, savePpeInspections } from '../lib/api';
 import type { PpeInspection, PpeItem, PpeResult } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
+import { AlertIcon, CheckCircleIcon } from '../components/Icons';
 
 const PPE_OPTS = [
   { v: 1 as PpeResult, label: 'มี', cls: 'p' as const },
@@ -166,7 +167,7 @@ function PpeSummary({ plate, dman, crew, items, records, onEdit, onTime }: {
   return (
     <section className="panel sum">
       <div className={`sum-status ${allOk ? 'ok' : 'wait'}`} role="status">
-        <span className="sum-icon" aria-hidden="true">{allOk ? '✓' : '!'}</span>
+        <span className="sum-icon" aria-hidden="true">{allOk ? <CheckCircleIcon /> : <AlertIcon />}</span>
         <div>
           <b>บันทึก PPE แล้ว</b>
           <span>{allOk ? 'ทุกคนในทีมมีอุปกรณ์ครบ' : notYet ? `ยังไม่ได้ตรวจ ${notYet} คน` : `มีอุปกรณ์ไม่ครบ ${notOk} คน`}</span>

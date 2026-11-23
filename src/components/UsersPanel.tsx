@@ -4,7 +4,7 @@ import { createUser, deleteUser, listUsers, resetUserPassword, updateUser, type 
 import { errMsg } from '../lib/utils';
 import { ActiveSwitch, CfgHead } from './CfgUi';
 import { ROLE_LABEL, useMe } from './Auth';
-import { KeyIcon } from './Icons';
+import { KeyIcon, AlertIcon } from './Icons';
 import { useMaster } from './MasterContext';
 import { useToast } from './Toast';
 
@@ -176,7 +176,7 @@ export function UsersPanel() {
         {/* sign-in is by the linked employee's code only: without one this account cannot sign in */}
         {!codeOf(u.employee_id) && (
           <div className="user-warn" role="status">
-            ⚠️ เข้าสู่ระบบไม่ได้ — {u.employee_id
+            <span className="warn-ico" aria-hidden><AlertIcon /></span>เข้าสู่ระบบไม่ได้ — {u.employee_id
               ? <>ใส่ <b>รหัสพนักงาน</b> ให้ {employees.find((e) => e.id === u.employee_id)?.name || 'พนักงานคนนี้'} ในตารางพนักงานด้านบน</>
               : <>ผูกบัญชีกับพนักงานที่มีรหัสพนักงาน</>}
           </div>
