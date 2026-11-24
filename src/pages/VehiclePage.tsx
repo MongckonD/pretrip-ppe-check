@@ -32,12 +32,6 @@ const formFrom = (r: VehicleInspection): VehicleForm => ({
   defects: Object.fromEntries(Object.entries(r.defects ?? {}).map(([k, d]) => [Number(k), { note: d.note, photo: d.photo }])),
 });
 
-/** sessionStorage: the check whose summary the user closed with "ตรวจรถคันอื่น" (show the form instead) */
-const NEW_FORM_KEY = 'veh-new-form-after';
-const readKey = () => { try { return sessionStorage.getItem(NEW_FORM_KEY); } catch { return null; } };
-const writeKey = (v: string | null) => {
-  try { if (v) sessionStorage.setItem(NEW_FORM_KEY, v); else sessionStorage.removeItem(NEW_FORM_KEY); } catch { /* ignore */ }
-};
 
 /**
  * Draft of the form, so nothing is lost when the user leaves the tab (or reloads) before sending:
@@ -67,8 +61,9 @@ const writeEdit = (v: string | null) => {
 
 /**
  * Vehicle-check tab. Once I have sent a check today, the tab shows its summary (pass / fail, waiting for approval)
- * — also after switching tabs or reloading — instead of a blank form. "ตรวจรถคันอื่น" opens the form for the next
- * vehicle; from the summary the team goes on to PPE (goPpe).
+ * — also after switching tabs or reloading — instead of a blank form; from the summary the team goes on to PPE (goPpe).
+ * Rules (the server and the database enforce them too): one vehicle a day per person (no "ตรวจรถคันอื่น"; the sent
+ * check can be fixed), the mileage every time, and every check item answered before sending.
  */
 export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
   const me = useMe();
@@ -85,7 +80,7 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
       const mine = list.filter((r) => !me || r.created_by === me.id)
         .sort((a, b) => (b.updated_at ?? b.inspect_time ?? '').localeCompare(a.updated_at ?? a.inspect_time ?? ''));
       const latest = mine[0];
-      setSummary(latest && readKey() !== latest.id ? latest : null);
+      setSummary(latest ?? null);
       // was fixing a sent check when the tab was left: go back into it
       const fixing = mine.find((r) => r.id === readEdit() && !r.approved_at);
       if (fixing) setEditing(fixing); else writeEdit(null);
@@ -98,7 +93,6 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
     return (
       <CheckSummary r={summary} onPpe={goPpe}
         onEdit={summary.approved_at ? undefined : () => { writeEdit(summary.id); setEditing(summary); }}
-        onAnother={() => { writeKey(summary.id); setSummary(null); }}
         onRefresh={async () => {
           // fetch this check again (approved / rejected by the supervisor since it was sent?)
           try {
@@ -113,7 +107,7 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
   return (
     <VehicleForm key={editing?.id ?? 'new'} initial={editing ? formFrom(editing) : undefined}
       onCancelEdit={editing ? () => { writeEdit(null); setEditing(null); } : undefined}
-      onSaved={(r) => { writeKey(null); writeEdit(null); setEditing(null); setSummary(r); notifyVehicleCheckChanged(); }} />
+      onSaved={(r) => { writeEdit(null); setEditing(null); setSummary(r); notifyVehicleCheckChanged(); }} />
   );
 }
 
@@ -245,13 +239,19 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
     if (!f.dman || !f.plate.trim()) return toast('เลือก D-Man และทะเบียนรถก่อน');
     const crew = [f.dman, f.h1, f.h2].filter(Boolean);
     if (new Set(crew).size !== crew.length) return toast('D-Man และ Helper ต้องเป็นคนละคนกัน');
-    if (!done) return toast('ยังไม่ได้ตรวจรายการใด');
+    // the mileage every time; every item answered (first send and every fix)
+    if (!f.mileage.trim()) { document.getElementById('v-mileage')?.focus(); return toast('กรอกเลขไมล์ก่อนส่ง'); }
+    const missing = items.filter((it) => f.results[it.item_no] === undefined).map((it) => it.item_no);
+    if (missing.length) {
+      document.getElementById(`check-${missing[0]}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return toast(`ตรวจให้ครบทุกข้อก่อนส่ง — ยังไม่ได้ตรวจ ${missing.length} ข้อ (ข้อ ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ' …' : ''})`);
+    }
     const noNote = Object.entries(f.results).filter(([k, v]) => v === 2 && !f.defects[Number(k)]?.note.trim()).map(([k]) => k);
     if (noNote.length) {
       document.getElementById(`defect-${noNote[0]}`)?.focus();
       return toast(`ระบุหมายเหตุของข้อที่ไม่ผ่าน: ข้อ ${noNote.join(', ')}`);
     }
-    if (f.mileage && !/^\d+$/.test(f.mileage.trim())) return toast('เลขไมล์ต้องเป็นตัวเลข');
+    if (!/^\d{1,7}$/.test(f.mileage.trim())) { document.getElementById('v-mileage')?.focus(); return toast('เลขไมล์ต้องเป็นตัวเลข'); }
     const dup = records.find((r) => r.plate === f.plate.trim() && r.id !== f.id);
     if (dup && replaceOk !== dup.id) {
       setReplaceOk(dup.id);
@@ -290,7 +290,7 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
           <ReadOnlyField label="วันที่" value={thaiDay(now)} />
           <ReadOnlyField label="เวลาตรวจ" value={thaiClock(now)} />
           <label>ทะเบียนรถ<PlateInput id="v-plate" value={f.plate} onChange={(v) => set('plate', v)} /></label>
-          <label>เลขไมล์<input inputMode="numeric" placeholder="เช่น 125000" value={f.mileage} onChange={(e) => set('mileage', e.target.value)} /></label>
+          <label><span>เลขไมล์ <em className="req">*</em></span><input id="v-mileage" inputMode="numeric" placeholder="เช่น 125000" value={f.mileage} onChange={(e) => set('mileage', e.target.value)} /></label>
         </div>
         <div className="field-group">ทีมงาน</div>
         <div className="fields c3 team">
@@ -301,7 +301,7 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
       </div>
 
       <div className="row spread section-head">
-        <b>รายการตรวจ <span className="mono">{done}/{total}</span></b>
+        <b>รายการตรวจ <span className="mono">{done}/{total}</span>{done < total && <span className="note"> · ต้องตรวจครบทุกข้อ</span>}</b>
         <button className="btn ghost sm" type="button" onClick={setAllPass}>ผ่านทั้งหมด</button>
       </div>
       <div className="prog" aria-hidden="true"><i style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div>
@@ -311,7 +311,7 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
           const d = f.defects[it.item_no];
           const busy = uploading === `item-${it.item_no}`;
           return (
-            <div className={`check${failed ? ' failed' : ''}`} key={it.item_no}>
+            <div id={`check-${it.item_no}`} className={`check${failed ? ' failed' : ''}`} key={it.item_no}>
               <div><span className="n">{pad2(it.item_no)}</span><span className="t">{it.name}</span></div>
               <div className="h">{it.hint}</div>
               <Seg label={`ข้อ ${it.item_no}`} value={f.results[it.item_no]} options={VEH_OPTS}
@@ -384,8 +384,8 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
 }
 
 /** Shown right after sending a vehicle check: what was recorded and that it now waits for review/approval. */
-function CheckSummary({ r, onPpe, onAnother, onEdit, onRefresh }: {
-  r: VehicleInspection; onPpe?: () => void; onAnother: () => void; onEdit?: () => void; onRefresh: () => Promise<void>;
+function CheckSummary({ r, onPpe, onEdit, onRefresh }: {
+  r: VehicleInspection; onPpe?: () => void; onEdit?: () => void; onRefresh: () => Promise<void>;
 }) {
   const { checkItems, photoSlots, nameOf } = useMaster();
   const [refreshing, setRefreshing] = useState(false);
@@ -467,7 +467,6 @@ function CheckSummary({ r, onPpe, onAnother, onEdit, onRefresh }: {
         {r.rejected_at && onEdit && <button className="btn" onClick={onEdit}>แก้ไขการตรวจคันนี้</button>}
         {onPpe && <button className={`btn ${r.rejected_at ? 'ghost' : ''}`} onClick={onPpe}>ตรวจ PPE ของทีมต่อ</button>}
         {!r.rejected_at && onEdit && <button className="btn ghost" onClick={onEdit}>แก้ไขการตรวจคันนี้</button>}
-        <button className="btn ghost" onClick={onAnother}>ตรวจรถคันอื่น</button>
       </div>
     </section>
   );

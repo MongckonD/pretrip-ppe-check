@@ -3,6 +3,8 @@
  *   POST /api/trip-activities/start      "เริ่มการทำงาน": creates today's record, start time stamped by the server
  *   POST /api/trip-activities/:id/end    "จบงาน / หยุดเวลาทำงาน": end time stamped by the server
  * 1 record = 1 vehicle / 1 day, tied to that day's vehicle check (vehicle + D-Man come from it).
+ * Store timer (store_visits, migration 0025): "จบงาน" is refused while a store is still being delivered / not saved,
+ * and a record with store statuses cannot be deleted (the database enforces both too).
  */
 import { requireStaff } from './auth';
 import { bad, conflict, json, notFound, readJson } from './http';
@@ -38,9 +40,17 @@ export async function deleteTripActivity({ env, actor, params }: Ctx) {
   requireStaff(actor);
   const id = decodeURIComponent(params[0]);
   const cur = await env.DB.prepare(
-    `SELECT t.id, t.activity_date, v.plate FROM trip_activities t JOIN vehicles v ON v.id = t.vehicle_id WHERE t.id = ?1`,
-  ).bind(id).first<{ id: string; activity_date: string; plate: string }>();
+    `SELECT t.id, t.activity_date, t.created_by AS trip_by, v.plate, vi.created_by, coalesce(vi.dman_id, t.dman_id) AS dman_id,
+            vi.helper1_id, vi.helper2_id,
+            EXISTS (SELECT 1 FROM store_visits sv WHERE sv.trip_activity_id = t.id) AS has_visits
+       FROM trip_activities t JOIN vehicles v ON v.id = t.vehicle_id
+       LEFT JOIN vehicle_inspections vi ON vi.id = t.vehicle_inspection_id
+      WHERE t.id = ?1`,
+  ).bind(id).first<CheckOwner & { id: string; activity_date: string; trip_by: string | null; plate: string; has_visits: number }>();
   if (!cur) throw notFound('ไม่พบบันทึกนี้ (อาจถูกลบไปแล้ว)');
+  // same team rule as start / end (before: any staff account could delete any vehicle's record)
+  if (cur.trip_by !== actor.id) assertMyCheck(actor, cur, cur.plate);
+  if (cur.has_visits) throw conflict(`รถ ${cur.plate} มีการจับเวลาร้านค้าของวันนี้แล้ว — ลบบันทึกเริ่มงานไม่ได้`);
   await env.DB.batch([
     audit(env, actor, 'delete', 'trip_activities', id, { date: cur.activity_date, plate: cur.plate }),
     env.DB.prepare(`DELETE FROM trip_activities WHERE id = ?1`).bind(id),
@@ -92,6 +102,13 @@ export async function endWork({ env, actor, params }: Ctx) {
   // whoever started the clock may stop it; otherwise the same team rule as the start
   if (cur.trip_by !== actor.id) assertMyCheck(actor, cur, cur.plate);
   if (cur.work_ended_at) throw conflict('จบงานไปแล้ว');
+  // store timer: a store still being delivered (or its finish form not saved) blocks "จบงาน"
+  const open = await env.DB.prepare(
+    `SELECT coalesce(nullif(p.store_name, ''), s.name) AS store
+       FROM store_visits sv JOIN delivery_plan p ON p.id = sv.plan_id JOIN stores s ON s.id = p.store_id
+      WHERE sv.trip_activity_id = ?1 AND sv.status = 'open'`,
+  ).bind(id).first<{ store: string }>();
+  if (open) throw conflict(`ยังส่ง ${open.store} ไม่เสร็จ — จบร้านนั้นและบันทึกก่อน จึงจะจบงานได้`);
   const now = new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare(

@@ -1281,3 +1281,73 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 .user-delete { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--fail-bg); border: 1px solid #F4B3B6; font-size: 14px; }
 .user-delete ul { margin: 0; padding-left: 18px; }
 .user-delete label { display: grid; gap: 4px; }
+/* DEV ONLY: store delivery timer inside the store list */
+.st { display: grid; gap: 12px; margin-top: 12px; }
+.st-dev { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-radius: 10px; font-size: 13px;
+  background: repeating-linear-gradient(45deg, #FFF4DB, #FFF4DB 10px, #FFEBB8 10px, #FFEBB8 20px); border: 1px solid #F2D48A; color: #6B4600; }
+.st-head { align-items: center; }
+.st-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 4px; }
+.st-actions .dl-bills-btn { margin-top: 0; }
+.st-status { font-size: 14px; font-weight: 600; }
+.st-status.done { color: var(--pass); }
+.st-status.running { color: var(--brand); }
+.st-item.done { background: #F6FBF8; border-color: #CFE7D9; }
+.st-item.running { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.st-locked { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 12px 14px; border-radius: 10px;
+  background: var(--brand-soft); border: 1px solid #F4B3B6; color: var(--ink); font-size: 14px; }
+.work-reset { margin-top: 12px; }
+.st-leg { font-weight: 400; color: #444; }
+/* DEV ONLY: one clock per store */
+.st-run { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.st-run-head b { font-size: 17px; }
+.st-run-clock { display: grid; justify-items: center; gap: 2px; padding: 16px; border-radius: 12px; background: var(--soft); }
+.st-run-clock span { font-size: 13px; color: var(--muted); }
+.st-run-clock b { font-size: 52px; line-height: 1.1; }
+/* DEV ONLY: delivered / not delivered */
+.st-item { grid-template-columns: 40px minmax(0, 1fr) auto auto; }
+.st-fail-cell { display: flex; align-items: center; }
+.st-fail-btn { background: #fff; color: var(--fail); border: 1px solid #F4B3B6; }
+.st-fail-btn:hover:not(:disabled) { background: var(--fail-bg); }
+.st-status.failed { color: var(--fail); display: grid; gap: 2px; }
+.st-fail-note { font-weight: 400; color: var(--ink); }
+.st-item.failed { background: #FFF7F7; border-color: #F4B3B6; }
+.st-fail-form { grid-column: 2 / -1; display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: var(--fail-bg); border: 1px solid #F4B3B6; }
+.st-fail-form label { display: grid; gap: 4px; font-size: 14px; }
+@media (max-width: 600px) {
+  .st-item { grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .st-fail-cell { grid-column: 2 / -1; grid-row: 2; }
+  .st-fail-form { grid-column: 1 / -1; }
+}
+/* DEV ONLY: short store rows; details on demand */
+.st-item { grid-template-columns: 40px minmax(0, 1fr) auto; }
+.st-detail { grid-column: 2 / -1; display: grid; gap: 8px; }
+.st-detail .dl-bills { grid-column: auto; }
+.st-detail-info { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, auto)); justify-content: start; gap: 6px 24px; font-size: 14px; }
+.st-detail-info div { display: grid; gap: 2px; }
+.st-detail-info .wide { grid-column: 1 / -1; }
+.st-detail-info dt { font-size: 12px; color: var(--muted); }
+.st-detail-info dd { margin: 0; color: var(--ink); }
+@media (max-width: 600px) { .st-item { grid-template-columns: 40px minmax(0, 1fr); } .st-detail { grid-column: 1 / -1; } }
+/* DEV ONLY: store location in the details (between code and type) */
+.st-detail-info { grid-template-columns: auto minmax(0, 1fr) auto auto; justify-content: stretch; }
+.st-loc dd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.st-loc-text { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .st-detail-info { grid-template-columns: repeat(3, minmax(0, auto)); justify-content: start; }
+  .st-loc { grid-column: 1 / -1; grid-row: 2; }
+}
+/* "ส่งไม่สำเร็จ" form buttons: clear on the pink background */
+.st-fail-form .st-fail-submit { background: var(--fail); color: #fff; border: 1px solid var(--fail); font-weight: 700; }
+.st-fail-form .st-fail-submit:hover:not(:disabled) { background: #a80008; border-color: #a80008; }
+.st-fail-form .st-fail-submit:disabled { opacity: 1; background: #B9B9B9; border-color: #B9B9B9; color: #fff; }
+.st-fail-form .st-fail-cancel { background: #fff; color: var(--ink); border: 1px solid #CFCFCF; font-weight: 600; }
+.st-fail-form textarea { background: #fff; }
+
+/* admin plan: delivery status of a store (store timer) */
+.plan-visit { display: inline-block; margin-top: 4px; font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 6px; }
+.plan-visit.done { background: #e8f6ee; color: #146c3a; }
+.plan-visit.failed { background: #fdecec; color: #b3261e; }
+.plan-visit.running { background: #fff4e0; color: #8a5a00; }
+
+/* admin home: เวลาส่งสินค้าที่ร้าน — the หมายเหตุ column wraps */
+.stt-note { white-space: normal; min-width: 140px; max-width: 260px; }

@@ -127,10 +127,32 @@ export interface ListOpts { date?: string; month?: string; from?: string; to?: s
 
 /* ---------- ร้านค้าที่ต้องส่ง (delivery plan, feature switch storeDelivery) ---------- */
 export interface DeliveryBill { bill_no: string; cases: number | null }
-/** one store on one day (one vehicle only); cases = the sum of its bills */
+/**
+ * the delivery status of a store today (store timer, table store_visits): times are stamped by the server.
+ * open = being delivered (ended_at empty) or the truck left but the finish form is not saved yet (ended_at set)
+ */
+export interface StoreVisitStatus {
+  id: string; status: 'open' | 'done' | 'failed'; started_at: string | null; ended_at: string | null;
+  cases: number | null; skus: number | null; distance_m: number | null; method: 'trolley' | 'carry' | 'both' | null;
+  note: string; /** who pressed it */ by: string;
+}
+/** admin report "เวลาส่งสินค้าที่ร้าน": 1 row per store of the plan per day (database view v_store_visit_summary) */
+export interface StoreVisitReportRow {
+  plan_id: string; plan_date: string; plate: string; sort_order: number; sap_code: string; store_name: string; store_type: string;
+  bills: number; plan_cases: number | null;
+  status: 'done' | 'failed' | 'open' | 'none'; started_at: string | null; ended_at: string | null;
+  /** time at the store (server times), delivered stores only */
+  seconds: number | null;
+  cases: number | null; skus: number | null; distance_m: number | null; move_method: 'trolley' | 'carry' | 'both' | null;
+  note: string; by_name: string | null; dman_name: string | null;
+}
+/** what the finish form saves */
+export interface StoreVisitSave { cases: number; skus?: number | null; distance_m?: number | null; method?: 'trolley' | 'carry' | 'both' | null }
+/** one store on one day (one vehicle only); cases = the sum of its bills; visit = its status (store timer switch only) */
 export interface DeliveryStop {
   id: string; plate: string; code: string; name: string; type: string; address: string;
   bills: DeliveryBill[]; cases: number | null;
+  visit?: StoreVisitStatus | null;
 }
 /** a row of the SAP file as the browser read it; date = delivery date YYYY-MM-DD ('' = the date chosen on the page) */
 export interface DeliveryRowIn { line: number; date: string; plate: string; code: string; name: string; type: string; address: string; cases: string; bill: string }

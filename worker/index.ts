@@ -14,6 +14,7 @@ import type { Ctx, Env } from './routes';
 import * as trip from './trip-routes';
 import * as imp from './import-routes';
 import * as dp from './delivery-routes';
+import * as sv from './store-visit-routes';
 
 /**
  * true  = staff must send a driving-licence photo before using anything else (no skipping)
@@ -62,6 +63,15 @@ const ROUTES: Route[] = [
   { m: 'POST', re: /^\/api\/delivery-plan$/, h: dp.addDeliveryStop },
   { m: 'DELETE', re: /^\/api\/delivery-plan$/, h: dp.clearDeliveryPlan },
   { m: 'DELETE', re: /^\/api\/delivery-plan\/([^/]+)$/, h: dp.removeDeliveryStop },
+  // store timer (hidden unless FEATURE_STORE_TIMER = "1"); the statuses come with GET /api/delivery-plan
+  { m: 'POST', re: /^\/api\/store-visits\/start$/, h: sv.startStoreVisit },
+  { m: 'POST', re: /^\/api\/store-visits\/fail$/, h: sv.failStoreVisit },
+  { m: 'POST', re: /^\/api\/store-visits\/([^/]+)\/end$/, h: sv.endStoreVisit },
+  { m: 'POST', re: /^\/api\/store-visits\/([^/]+)\/resume$/, h: sv.resumeStoreVisit },
+  { m: 'POST', re: /^\/api\/store-visits\/([^/]+)\/save$/, h: sv.saveStoreVisit },
+  { m: 'GET', re: /^\/api\/store-visits$/, h: sv.listStoreVisitReport },
+  { m: 'DELETE', re: /^\/api\/store-visits$/, h: sv.devResetStoreVisits },
+  { m: 'DELETE', re: /^\/api\/store-visits\/([^/]+)$/, h: sv.deleteStoreVisit },
 
   { m: 'GET', re: /^\/api\/master$/, h: r.getMaster },
   { m: 'PUT', re: /^\/api\/employees\/([^/]+)$/, h: r.putEmployee },

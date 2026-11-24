@@ -5,7 +5,7 @@
  */
 import type { LicenseForm, LicenseInfo, LicenseRow } from './license';
 import type {
-  DeliveryAddIn, DeliveryImportResult, DeliveryRowIn, DeliveryStop, Employee, ListOpts, Master, PpeForm, PpeInspection, TripActivity, Vehicle, VehicleForm, VehicleInspection,
+  DeliveryAddIn, DeliveryImportResult, DeliveryRowIn, DeliveryStop, StoreVisitReportRow, StoreVisitSave, Employee, ListOpts, Master, PpeForm, PpeInspection, TripActivity, Vehicle, VehicleForm, VehicleInspection,
 } from './types';
 
 /** admin = ทุกอย่าง · user = พนักงาน */
@@ -263,3 +263,17 @@ export const importDeliveryPlan = (date: string, mode: 'replace' | 'append', row
 export const addDeliveryStop = (b: DeliveryAddIn) => call<{ id: string }>('POST', '/api/delivery-plan', b);
 export const removeDeliveryStop = (id: string) => call<{ ok: true }>('DELETE', `/api/delivery-plan/${encodeURIComponent(id)}`);
 export const clearDeliveryPlan = (date: string) => call<{ ok: true }>('DELETE', `/api/delivery-plan?date=${encodeURIComponent(date)}`);
+
+/* ---------- store timer (feature switch storeTimer; the Worker answers 404 while it is off) — every time is stamped by the server ---------- */
+const sv = (id: string) => `/api/store-visits/${encodeURIComponent(id)}`;
+export const startStoreVisit = (planId: string) => call<{ id: string; started_at: string }>('POST', '/api/store-visits/start', { plan_id: planId });
+export const endStoreVisit = (id: string) => call<{ id: string; ended_at: string }>('POST', `${sv(id)}/end`, {});
+export const resumeStoreVisit = (id: string) => call<{ ok: true }>('POST', `${sv(id)}/resume`, {});
+export const saveStoreVisit = (id: string, b: StoreVisitSave) => call<{ ok: true }>('POST', `${sv(id)}/save`, b);
+export const failStoreVisit = (planId: string, note: string) => call<{ id: string }>('POST', '/api/store-visits/fail', { plan_id: planId, note });
+export const deleteStoreVisit = (id: string) => call<{ ok: true }>('DELETE', sv(id));
+/** admin report: every store of the plan in a date range with its delivery status and times */
+export const listStoreVisitReport = (from: string, to: string) =>
+  call<StoreVisitReportRow[]>('GET', `/api/store-visits?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+/** local development only (the Worker refuses it elsewhere): clear today's statuses of a vehicle */
+export const devResetStoreVisits = (plate: string) => call<{ ok: true }>('DELETE', `/api/store-visits?plate=${encodeURIComponent(plate)}`);

@@ -20,7 +20,7 @@ import { useMaster } from '../components/MasterContext';
 import { useToast } from '../components/Toast';
 import { addDeliveryStop, clearDeliveryPlan, importDeliveryPlan, listDeliveryPlan, removeDeliveryStop } from '../lib/api';
 import { readSheet, toCsvBom } from '../lib/sheet';
-import { STORE_TYPES, storeTypeName, type StoreType } from '../lib/storeVisit';
+import { STORE_TYPES, hhmm, minutes1, storeTypeName, type StoreType } from '../lib/storeVisit';
 import type { DeliveryImportResult, DeliveryRowIn, DeliveryStop } from '../lib/types';
 import { downloadText, errMsg, today } from '../lib/utils';
 
@@ -216,7 +216,12 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
   }
 
   const pv = preview;
-  const fileErrors = pv?.replace.errors ?? [];
+  // "แทนที่ไม่ได้" (stores that already have a delivery status) blocks replacing only — not the file, not "เพิ่มต่อ"
+  const isLock = (e: string) => e.startsWith('แทนที่ไม่ได้');
+  const lockErrors = pv?.replace.errors.filter(isLock) ?? [];
+  const fileErrors = pv?.replace.errors.filter((e) => !isLock(e)) ?? [];
+  // stores of this day that already have a delivery status cannot leave the plan
+  const withStatus = list.filter((s) => s.visit).length;
   const appendErrors = pv?.append?.errors.filter((e) => !fileErrors.includes(e)) ?? [];
   const notes = [...(pv?.typeNotes ?? []), ...(pv?.replace.notes ?? [])];
 
@@ -274,6 +279,11 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
                 {fileErrors.length > 8 && <li>…และอีก {fileErrors.length - 8} รายการ</li>}</ul>
             </div>
           )}
+          {!fileErrors.length && lockErrors.length > 0 && (
+            <div className="form-error" role="alert">
+              {lockErrors.map((p) => <div key={p}>{p}</div>)}
+            </div>
+          )}
           {!fileErrors.length && appendErrors.length > 0 && (
             <div className="form-error" role="alert">
               <b>เพิ่มต่อจากรายการเดิมไม่ได้ — ชนกับรายการที่บันทึกไว้แล้ว</b>
@@ -287,12 +297,12 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
           <div className="row">
             {/* replacing days that may already have a plan: tap twice (no pop-up) */}
             {pv.append ? (
-              <ConfirmButton className="btn sm" disabled={busy || fileErrors.length > 0} onConfirm={() => applyImport('replace')}
+              <ConfirmButton className="btn sm" disabled={busy || fileErrors.length > 0 || lockErrors.length > 0} onConfirm={() => applyImport('replace')}
                 confirmText={`แตะอีกครั้ง: แทนที่รายการเดิมของ ${pv.replace.summary.dates.map((x) => thaiDate(x.date)).join(', ')}`}>
                 ใช้แทนรายการเดิมของวันที่ในไฟล์
               </ConfirmButton>
             ) : (
-              <button type="button" className="btn sm" disabled={busy || fileErrors.length > 0} onClick={() => applyImport('replace')}>นำเข้ารายการนี้</button>
+              <button type="button" className="btn sm" disabled={busy || fileErrors.length > 0 || lockErrors.length > 0} onClick={() => applyImport('replace')}>นำเข้ารายการนี้</button>
             )}
             {pv.append && (
               <button type="button" className="btn ghost sm" disabled={busy || fileErrors.length > 0 || appendErrors.length > 0}
@@ -355,6 +365,8 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
                           {s.type && <span className="plan-tag">{typeName(s.type)}</span>}
                         </span>
                         {s.address && <span className="plan-addr"><span className="ii" aria-hidden><PinIcon /></span>{s.address}</span>}
+                        {/* delivery status from the store timer (times stamped by the server) */}
+                        {s.visit && <VisitTag v={s.visit} />}
                         {s.bills.length > 0 && (
                           <span className="plan-bills">
                             <span className="plan-bills-label">{s.bills.length} บิล</span>
@@ -368,7 +380,7 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
                         )}
                       </span>
                       <span className="mono plan-cases">{casesText(s.cases)}<small> ลัง</small></span>
-                      {!locked && (
+                      {!locked && !s.visit && (
                         <ConfirmButton className="btn ghost sm plan-del" onConfirm={() => remove(s)} ariaLabel={`ลบ ${s.name}`} confirmText="ลบ?">✕</ConfirmButton>
                       )}
                     </li>
@@ -381,11 +393,25 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
       )}
       {list.length > 0 && open && !locked && (
         <div className="row plan-foot">
-          <span />
-          <ConfirmButton className="btn danger sm" onConfirm={clearDay}
+          <span className="note">{withStatus ? `มี ${withStatus} ร้านที่บันทึกสถานะการส่งแล้ว — ลบร้านเหล่านี้ไม่ได้` : ''}</span>
+          <ConfirmButton className="btn danger sm" disabled={withStatus > 0} onConfirm={clearDay}
             confirmText={`แตะอีกครั้งเพื่อล้างทั้ง ${list.length} ร้านของ ${thaiDate(date)}`}>ล้างรายการของวันนี้ทั้งหมด</ConfirmButton>
         </div>
       )}
     </section>
   );
+}
+
+/** the store's delivery status today: ส่งสำเร็จ (times, minutes, cases) / กำลังส่ง / ส่งไม่สำเร็จ (note) */
+function VisitTag({ v }: { v: NonNullable<DeliveryStop['visit']> }) {
+  if (v.status === 'done' && v.started_at && v.ended_at) {
+    const sec = Math.max(0, (Date.parse(v.ended_at) - Date.parse(v.started_at)) / 1000);
+    return (
+      <span className="plan-visit done">
+        ✓ ส่งสำเร็จ {hhmm(v.started_at)}–{hhmm(v.ended_at)} น. · {minutes1(sec)} นาที · {casesText(v.cases)} ลัง{v.by ? ` · ${v.by}` : ''}
+      </span>
+    );
+  }
+  if (v.status === 'failed') return <span className="plan-visit failed">✗ ส่งไม่สำเร็จ · {v.note}{v.by ? ` · ${v.by}` : ''}</span>;
+  return <span className="plan-visit running">● กำลังส่ง{v.started_at ? ` · จอด ${hhmm(v.started_at)} น.` : ''}{v.ended_at ? ' · รอบันทึก' : ''}</span>;
 }

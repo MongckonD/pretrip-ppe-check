@@ -14,6 +14,9 @@
  * keeps the store name / type / address of that day, migration 0024) ·
  * delivery_bills (1 row = 1 bill; a store's cases = the sum of its bills).
  * Hidden unless the Worker var FEATURE_STORE_DELIVERY is "1" (every route answers 404 otherwise).
+ * Store timer (store_visits, migration 0025): with FEATURE_STORE_TIMER = "1" each stop also carries its delivery status.
+ * A store that has a status (กำลังส่ง / ส่งสำเร็จ / ส่งไม่สำเร็จ) cannot leave the plan: แทนที่, ลบร้าน and ล้างทั้งวัน are refused
+ * with the store names (the database refuses it too: FK RESTRICT).
  * Writes use a few set-based statements (json_each) so a 500-row file stays within D1's per-request query limit.
  */
 import { requireRole } from './auth';
@@ -47,17 +50,28 @@ function casesOf(v: unknown): number | null | string {
 }
 
 export interface Bill { bill_no: string; cases: number | null }
-interface Stop { id: string; plate: string; code: string; name: string; type: string; address: string; bills: Bill[] }
+/** the store's delivery status today (store timer) */
+export interface Visit {
+  id: string; status: 'open' | 'done' | 'failed'; started_at: string | null; ended_at: string | null;
+  cases: number | null; skus: number | null; distance_m: number | null; method: string | null; note: string; by: string;
+}
+interface Stop { id: string; plate: string; code: string; name: string; type: string; address: string; bills: Bill[]; visit?: Visit | null }
 
 /* ------------------------------------------------------------------ read ------------------------------------------------------------------ */
 
 type PlanRow = {
   id: string; plate: string; sort_order: number; sap_code: string; name: string; store_type: string; address: string;
   bill_no: string | null; cases: number | null;
-};
+} & Partial<{
+  sv_id: string | null; sv_status: Visit['status'] | null; sv_started_at: string | null; sv_ended_at: string | null; sv_cases: number | null;
+  sv_skus: number | null; sv_distance_m: number | null; sv_method: string | null; sv_note: string; sv_by: string | null;
+}>;
+const timerOn = (env: Env) => env.FEATURE_STORE_TIMER === '1';
 
-/** the stops of a day (optionally one vehicle), stores in file order, bills grouped under their store */
+/** the stops of a day (optionally one vehicle), stores in file order, bills grouped under their store;
+ *  with the store timer on, each stop also has its delivery status (1 extra row per store, by the unique plan_id index) */
 async function readPlan(env: Env, date: string, vehicleId?: string) {
+  const visits = timerOn(env);
   const { results } = await env.DB.prepare(
     // name / type / address as they were on that day (saved on the plan row); the store's current data only if none was saved
     `SELECT p.id, v.plate, p.sort_order, s.sap_code,
@@ -65,10 +79,14 @@ async function readPlan(env: Env, date: string, vehicleId?: string) {
             CASE WHEN p.store_name <> '' THEN p.store_type ELSE s.store_type END AS store_type,
             CASE WHEN p.store_name <> '' THEN p.store_address ELSE s.address END AS address,
             b.bill_no, b.cases
+            ${visits ? `, sv.id AS sv_id, sv.status AS sv_status, sv.started_at AS sv_started_at, sv.ended_at AS sv_ended_at,
+              sv.cases AS sv_cases, sv.skus AS sv_skus, sv.distance_m AS sv_distance_m, sv.move_method AS sv_method, sv.note AS sv_note,
+              nullif(u.display_name, '') AS sv_by` : ''}
        FROM delivery_plan p
        JOIN vehicles v ON v.id = p.vehicle_id
        JOIN stores s ON s.id = p.store_id
        LEFT JOIN delivery_bills b ON b.plan_id = p.id
+       ${visits ? 'LEFT JOIN store_visits sv ON sv.plan_id = p.id LEFT JOIN users u ON u.id = sv.started_by' : ''}
       WHERE p.plan_date = ?1 ${vehicleId ? 'AND p.vehicle_id = ?2' : ''}
       ORDER BY v.plate, p.sort_order, b.rowid`,
   ).bind(...(vehicleId ? [date, vehicleId] : [date])).all<PlanRow>();
@@ -77,6 +95,13 @@ async function readPlan(env: Env, date: string, vehicleId?: string) {
     let st = byId.get(r.id);
     if (!st) {
       st = { id: r.id, plate: r.plate, code: r.sap_code, name: r.name, type: r.store_type, address: r.address, bills: [], sort: r.sort_order };
+      if (visits) {
+        st.visit = r.sv_id && r.sv_status ? {
+          id: r.sv_id, status: r.sv_status, started_at: r.sv_started_at ?? null, ended_at: r.sv_ended_at ?? null,
+          cases: r.sv_cases ?? null, skus: r.sv_skus ?? null, distance_m: r.sv_distance_m ?? null, method: r.sv_method ?? null,
+          note: r.sv_note ?? '', by: r.sv_by ?? '',
+        } : null;
+      }
       byId.set(r.id, st);
     }
     if (r.bill_no !== null) st.bills.push({ bill_no: r.bill_no, cases: r.cases });
@@ -127,6 +152,26 @@ function assertOpenDate(date: string) {
   const why = closedDate(date);
   if (why) throw bad(why);
 }
+
+const STATUS_TEXT: Record<string, string> = { open: 'กำลังส่ง', done: 'ส่งสำเร็จแล้ว', failed: 'ส่งไม่สำเร็จ' };
+/**
+ * Stores of these days (or this one plan row) that already have a delivery status: they cannot leave the plan.
+ * Returns "ร้าน X (รถ Y · ส่งสำเร็จแล้ว)" texts; empty = nothing locked.
+ */
+async function lockedStores(env: Env, by: { dates: string[] } | { planId: string }): Promise<string[]> {
+  const where = 'dates' in by ? 'p.plan_date IN (SELECT value FROM json_each(?1))' : 'p.id = ?1';
+  const arg = 'dates' in by ? JSON.stringify(by.dates) : by.planId;
+  if ('dates' in by && !by.dates.length) return [];
+  const { results } = await env.DB.prepare(
+    `SELECT coalesce(nullif(p.store_name, ''), s.name) AS store, v.plate, sv.status
+       FROM delivery_plan p JOIN store_visits sv ON sv.plan_id = p.id
+       JOIN stores s ON s.id = p.store_id JOIN vehicles v ON v.id = p.vehicle_id
+      WHERE ${where} ORDER BY v.plate, p.sort_order`,
+  ).bind(arg).all<{ store: string; plate: string; status: string }>();
+  return results.map((r) => `${r.store} (รถ ${r.plate} · ${STATUS_TEXT[r.status] ?? r.status})`);
+}
+const lockedText = (names: string[]) =>
+  `มีร้านที่บันทึกสถานะการส่งแล้ว ${names.length} ร้าน: ${names.slice(0, 5).join(', ')}${names.length > 5 ? ' …' : ''} — ร้านเหล่านี้เอาออกจากแผนไม่ได้`;
 
 interface InRow {
   line?: unknown; date?: unknown; plate?: unknown; code?: unknown; name?: unknown; type?: unknown; address?: unknown; cases?: unknown; bill?: unknown;
@@ -216,6 +261,11 @@ async function checkImport(env: Env, fallback: string, mode: 'replace' | 'append
         WHERE p.plan_date IN (SELECT value FROM json_each(?1))`,
     ).bind(JSON.stringify(dates)).all<{ id: string; plan_date: string; sap_code: string; plate: string; sort_order: number }>()).results
     : [];
+  // replace wipes those days: stores that already have a delivery status are locked
+  if (mode === 'replace') {
+    const locked = await lockedStores(env, { dates });
+    if (locked.length) errors.push(`แทนที่ไม่ได้: ${lockedText(locked)} — ใช้ "เพิ่ม" แทน`);
+  }
   const maxSort = new Map<string, number>();
   for (const c of cur) maxSort.set(c.plan_date, Math.max(maxSort.get(c.plan_date) ?? 0, c.sort_order));
   if (mode === 'append') {
@@ -397,6 +447,8 @@ export async function removeDeliveryStop({ env, actor, params }: Ctx) {
   ).bind(id).first<{ plan_date: string; sap_code: string }>();
   if (!cur) throw notFound('ไม่พบร้านนี้ในแผน (อาจถูกลบไปแล้ว)');
   assertOpenDate(cur.plan_date);
+  const locked = await lockedStores(env, { planId: id });
+  if (locked.length) throw conflict(`ลบไม่ได้: ${lockedText(locked)}`);
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM delivery_bills WHERE plan_id = ?1`).bind(id),
     env.DB.prepare(`DELETE FROM delivery_plan WHERE id = ?1`).bind(id),
@@ -410,6 +462,8 @@ export async function clearDeliveryPlan({ env, actor, url }: Ctx) {
   requireRole(actor, 'admin');
   const date = reqDate(url.searchParams.get('date'));
   assertOpenDate(date);
+  const locked = await lockedStores(env, { dates: [date] });
+  if (locked.length) throw conflict(`ล้างทั้งวันไม่ได้: ${lockedText(locked)}`);
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM delivery_bills WHERE plan_id IN (SELECT id FROM delivery_plan WHERE plan_date = ?1)`).bind(date),
     env.DB.prepare(`DELETE FROM delivery_plan WHERE plan_date = ?1`).bind(date),

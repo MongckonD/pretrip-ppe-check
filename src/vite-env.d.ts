@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_BACKEND?: string;
   /** '1' = แสดงฟีเจอร์ร้านค้า/ส่งสินค้า (ยังพัฒนาอยู่) — ดู src/lib/features.ts */
   readonly VITE_FEATURE_STORE_DELIVERY?: string;
+  /** '1' = จับเวลาร้านค้า (dev only, never on the live site) */
+  readonly VITE_FEATURE_STORE_TIMER?: string;
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv;

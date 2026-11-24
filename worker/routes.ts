@@ -14,6 +14,8 @@ export interface Env {
   ASSETS: Fetcher;
   /** "1" = store delivery (ร้านค้าที่ต้องส่ง) API on; anything else = its routes answer 404 (version 1) */
   FEATURE_STORE_DELIVERY?: string;
+  /** "1" = store timer (จับเวลาร้านค้า, store_visits) API on; needs FEATURE_STORE_DELIVERY too — otherwise 404 */
+  FEATURE_STORE_TIMER?: string;
 }
 
 export interface Ctx {
@@ -401,7 +403,9 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
   if (!h1 && h2) { h1 = h2; h2 = null; } // Helper 2 alone becomes Helper 1
   const crew = [dman, h1, h2].filter((x): x is string => !!x);
   if (new Set(crew).size !== crew.length) throw bad('D-Man และ Helper ต้องเป็นคนละคนกัน');
+  // เลขไมล์ต้องกรอกทุกครั้ง (the database refuses an empty one too, migration 0026)
   const mileage = optMileage(b.mileage);
+  if (mileage === null) throw bad('กรอกเลขไมล์ก่อนส่ง');
   const note = text(b.note, 'หมายเหตุ', 2000);
   const p = plate(b.plate);
 
@@ -435,12 +439,18 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
   if (!vehicle) throw bad(`ยังไม่ได้ลงทะเบียนรถ ${p} — เพิ่มได้ที่แท็บตั้งค่า`);
   await assertEmployeesExist(env, crew);
   const [items, slots] = await env.DB.batch([
-    env.DB.prepare(`SELECT item_no FROM check_items`),
+    env.DB.prepare(`SELECT item_no, active FROM check_items`),
     env.DB.prepare(`SELECT code FROM photo_slots WHERE active = 1`),
   ]);
-  const itemSet = new Set((items.results as { item_no: number }[]).map((r) => String(r.item_no)));
+  const itemRows = items.results as { item_no: number; active: number }[];
+  const itemSet = new Set(itemRows.map((r) => String(r.item_no)));
   const badItem = Object.keys(results).find((k) => !itemSet.has(k));
   if (badItem) throw bad(`ไม่มีข้อตรวจที่ ${badItem}`);
+  // every active item must be checked — on the first send and on every fix
+  const missingItems = itemRows.filter((r) => r.active === 1 && !(String(r.item_no) in results)).map((r) => r.item_no).sort((a, b) => a - b);
+  if (missingItems.length) {
+    throw bad(`ตรวจให้ครบทุกข้อก่อนส่ง — ยังไม่ได้ตรวจ ${missingItems.length} ข้อ (ข้อ ${missingItems.slice(0, 10).join(', ')}${missingItems.length > 10 ? ' …' : ''})`);
+  }
   const slotSet = new Set((slots.results as { code: string }[]).map((r) => r.code));
   const badSlot = photoKeys.find(([s]) => !slotSet.has(s));
   if (badSlot) throw bad(`ไม่มีช่องรูป ${badSlot[0]}`);
@@ -467,6 +477,16 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
     ).bind(date, vehicle.id).first<{ id: string; approved_at: string | null }>();
     if (cur?.approved_at) throw conflict('รายการนี้หัวหน้าอนุมัติแล้ว แก้ไขไม่ได้ (ต้องยกเลิกอนุมัติก่อน)');
     if (!cur && vehicle.active !== 1) throw bad(`รถ ${vehicle.plate} ปิดใช้งานแล้ว เปิดใช้งานใหม่ได้ที่แท็บตั้งค่า`);
+    // one vehicle a day: someone who already checked (or is in the crew of) another vehicle today cannot check a second one
+    if (!cur) {
+      const other = await env.DB.prepare(
+        `SELECT v.plate FROM vehicle_inspections vi JOIN vehicles v ON v.id = vi.vehicle_id
+          WHERE vi.inspect_date = ?1 AND vi.vehicle_id <> ?2
+            AND (vi.created_by = ?3 OR (?4 IS NOT NULL AND ?4 IN (vi.dman_id, vi.helper1_id, vi.helper2_id)))
+          LIMIT 1`,
+      ).bind(date, vehicle.id, actor.id, actor.employee_id ?? null).first<{ plate: string }>();
+      if (other) throw conflict(`วันนี้คุณตรวจรถ ${other.plate} ไปแล้ว — ตรวจรถได้วันละ 1 คัน (แก้ไขการตรวจคันเดิมได้)`);
+    }
     isNew = !cur;
     id = cur?.id ?? crypto.randomUUID();
   }
@@ -922,7 +942,9 @@ function csvCell(v: unknown): string {
   return /[",\r\n]/.test(s) || /^[=+\-@]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export async function getReport({ env, url, params }: Ctx) {
+/** GET /api/reports/<name>(.csv|.json) — admin only (the reports hold every employee's data) */
+export async function getReport({ env, actor, url, params }: Ctx) {
+  requireRole(actor, 'admin');
   const name = params[0];
   const format = params[1] ?? 'json';
   const rep = REPORTS[name];

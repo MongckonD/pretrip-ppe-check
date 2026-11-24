@@ -13,7 +13,7 @@ import { ReadOnlyField, thaiDay, useNow } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { CheckPicker, NoCheckYet, useTodayChecks } from '../components/TodayChecks';
 import { useToast } from '../components/Toast';
-import { endWork, listTripActivities, startWork } from '../lib/api';
+import { deleteTripActivity, devResetStoreVisits, endWork, listTripActivities, startWork } from '../lib/api';
 import type { TripActivity } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
 
@@ -59,6 +59,9 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
   const trip = check ? records.find((r) => r.plate === check.plate) : undefined;
   const running = !!trip && !trip.work_ended_at;
   useTick(running);
+  // store timer: the server refuses "จบงาน" while a store is still being delivered — its message stays on screen
+  const [endBlocked, setEndBlocked] = useState('');
+  useEffect(() => setEndBlocked(''), [check?.plate]);
 
   async function start() {
     if (!check) return;
@@ -71,8 +74,23 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
   async function finish() {
     if (!trip) return;
     setBusy(true);
+    setEndBlocked('');
     try { await endWork(trip.id); toast('จบงานแล้ว บันทึกเวลาทำงานเรียบร้อย'); await reload(); }
-    catch (e) { toast('จบงานไม่สำเร็จ: ' + errMsg(e)); }
+    catch (e) {
+      const m = errMsg(e);
+      if (m.includes('ไม่เสร็จ') || m.includes('กำลังส่ง')) setEndBlocked(m);
+      toast('จบงานไม่สำเร็จ: ' + m);
+    }
+    finally { setBusy(false); }
+  }
+
+  /** DEV ONLY (development build only, never on the live site): delete today's work record so "เริ่มการทำงาน" can be tested again */
+  async function clearWork() {
+    if (!trip) return;
+    setBusy(true);
+    // the store statuses of the day go first (a work record with store statuses cannot be deleted)
+    try { await devResetStoreVisits(trip.plate).catch(() => undefined); await deleteTripActivity(trip.id); toast('ล้างเวลาแล้ว — กด "เริ่มการทำงาน" ใหม่ได้'); await reload(); }
+    catch (e) { toast('ล้างเวลาไม่สำเร็จ: ' + errMsg(e)); }
     finally { setBusy(false); }
   }
 
@@ -108,6 +126,13 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
             ▶ เริ่มการทำงาน
           </button>
         )}
+        {/* DEV ONLY (development build): wipe today's start / end to test again — never shown on the live site */}
+        {import.meta.env.DEV && trip && (
+          <div className="st-dev work-reset" role="note">
+            <span><b>โหมดพัฒนา</b> · ล้างเวลาเริ่มงาน / จบงานของรถ {check?.plate} วันนี้ เพื่อทดสอบใหม่</span>
+            <ConfirmButton disabled={busy} onConfirm={clearWork}>ล้างเวลา</ConfirmButton>
+          </div>
+        )}
       </section>
 
       {/* box 2: end of the day — stop the work clock */}
@@ -125,6 +150,11 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
               <b>{hms(Math.max(0, Math.floor((Date.now() - Date.parse(trip.work_started_at)) / 1000)))}</b>
               <span>เริ่มเมื่อ {trip.start_time} น.</span>
             </div>
+            {endBlocked && (
+              <div className="st-locked" role="alert">
+                <span><b>ยังจบงานไม่ได้</b> — {endBlocked} (ที่หน้า "ร้านค้าที่ต้องส่ง")</span>
+              </div>
+            )}
             {/* tap twice (never a pop-up: some browsers block them and answer "no" silently) */}
             <ConfirmButton className="btn work-btn end" disabled={busy} onConfirm={finish}
               confirmText="แตะอีกครั้งเพื่อจบงาน — แก้ไขไม่ได้">■ จบงาน / หยุดเวลาทำงาน</ConfirmButton>

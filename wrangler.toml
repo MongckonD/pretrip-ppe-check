@@ -44,3 +44,5 @@ bucket_name = "pretrip-driver-licenses"
 # local development turns it on in .dev.vars
 [vars]
 FEATURE_STORE_DELIVERY = "1"
+# store timer (จับเวลาร้านค้า, table store_visits): on since version 1.2.0
+FEATURE_STORE_TIMER = "1"

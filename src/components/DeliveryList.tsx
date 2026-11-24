@@ -3,7 +3,8 @@
  * plan the admin imported from SAP. The vehicle comes from today's vehicle check of my team (picker when there are two).
  * Only shown when the storeDelivery feature switch is on.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { FEATURES } from '../lib/features';
 import { useNow } from './Fields';
 import { PinIcon, RefreshIcon, StoreIcon } from './Icons';
 import { CheckPicker, NoCheckYet, useTodayChecks } from './TodayChecks';
@@ -13,8 +14,10 @@ import type { DeliveryStop } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
 
 const casesText = (n: number | null) => (n === null ? '–' : n.toLocaleString('th-TH'));
+// store timer, loaded only when its switch is on (the live site does not load it while the switch is off)
+const StoreTimer = lazy(() => import('./StoreTimer').then((m) => ({ default: m.StoreTimer })));
 
-export function DeliveryList({ goVehicle }: { goVehicle?: () => void }) {
+export function DeliveryList({ goVehicle, goWork }: { goVehicle?: () => void; goWork?: () => void }) {
   const now = useNow();
   const [day, setDay] = useState(today());
   useEffect(() => { if (today() !== day) setDay(today()); }, [now, day]);
@@ -34,6 +37,9 @@ export function DeliveryList({ goVehicle }: { goVehicle?: () => void }) {
     try { setStops(await listDeliveryPlan(day, plate)); } catch (e) { setStops([]); setError(errMsg(e)); } finally { setLoading(false); }
   }, [day, plate]);
   useEffect(() => { setStops(null); load(); }, [load]);
+  // store timer: "รีเฟรช" also re-reads the vehicle's work record
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => { setRefreshKey((x) => x + 1); load(); };
 
   if (checks === null) return <div className="empty">กำลังโหลด…</div>;
   if (!checks.length) return <NoCheckYet title="ร้านค้าที่ต้องส่ง" then="รายการร้านของรถคันนั้นจะขึ้นที่นี่" goVehicle={goVehicle} />;
@@ -51,7 +57,7 @@ export function DeliveryList({ goVehicle }: { goVehicle?: () => void }) {
             {stops === null ? 'กำลังโหลด…' : list.length ? `${list.length} ร้าน · ${bills} บิล${cases !== null ? ` · ${casesText(cases)} ลัง` : ''}` : ''}
           </span>
         </div>
-        <button type="button" className="btn ghost sm" disabled={loading} onClick={load}>
+        <button type="button" className="btn ghost sm" disabled={loading} onClick={refresh}>
           <span className="ii" aria-hidden><RefreshIcon /></span>{loading ? 'กำลังโหลด…' : 'รีเฟรช'}
         </button>
       </div>
@@ -60,7 +66,11 @@ export function DeliveryList({ goVehicle }: { goVehicle?: () => void }) {
       {stops !== null && !error && !list.length && (
         <div className="empty">ยังไม่มีรายการร้านของรถ {plate} วันนี้ — หัวหน้ายังไม่ได้นำเข้าแผนส่ง</div>
       )}
-      {list.length > 0 && (
+      {/* the store list with the delivery timer (feature switch storeTimer; off on the live site until it is released) */}
+      {FEATURES.storeTimer && plate && stops !== null && !error && list.length > 0 && (
+        <Suspense fallback={<div className="empty">กำลังโหลด…</div>}><StoreTimer key={plate} plate={plate} stops={list} reload={load} refreshKey={refreshKey} goWork={goWork} /></Suspense>
+      )}
+      {!FEATURES.storeTimer && list.length > 0 && (
         <ul className="dl-list">
           {list.map((s) => (
             <li key={s.id} className="dl-item">

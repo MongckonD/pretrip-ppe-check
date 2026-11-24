@@ -13,6 +13,8 @@ const on = (v: string | undefined) => v === '1' || v === 'true';
 
 export const FEATURES = {
   storeDelivery: on(import.meta.env.VITE_FEATURE_STORE_DELIVERY),
+  /** store-delivery timer (จับเวลาร้านค้า, table store_visits): on since version 1.2.0 (needs the Worker var FEATURE_STORE_TIMER too) */
+  storeTimer: on(import.meta.env.VITE_FEATURE_STORE_TIMER),
 } as const;
 
 /** app version shown in the menu (from package.json) */

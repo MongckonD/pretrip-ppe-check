@@ -36,7 +36,7 @@ const WORK_TABS: TabDef[] = [
   // (hidden in version 1). The store-visit timer (TimeActivitiesPage sub="store") stays hidden for now.
   ...(FEATURES.storeDelivery ? [
     { key: 'time-store', parent: 'time', path: '/time-activities/stores', label: 'ร้านค้าที่ต้องส่ง', title: 'ร้านค้าที่ต้องส่ง', icon: StoreIcon,
-      render: (c) => <Suspense fallback={<div className="empty">กำลังโหลด…</div>}><DeliveryList goVehicle={() => c.go('veh')} /></Suspense> },
+      render: (c) => <Suspense fallback={<div className="empty">กำลังโหลด…</div>}><DeliveryList goVehicle={() => c.go('veh')} goWork={() => c.go('time-work')} /></Suspense> },
   ] satisfies TabDef[] : []),
 ];
 

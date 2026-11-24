@@ -61,7 +61,7 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() +
 const nowIso = () => new Date().toISOString();
 
 /** re-render every second while `on` */
-function useTick(on: boolean) {
+export function useTick(on: boolean) {
   const [, setT] = useState(0);
   useEffect(() => {
     if (!on) return;
@@ -199,7 +199,8 @@ const draftOf = (v?: Delivery): DeliveryDraft => ({
   cases: v?.cases != null ? String(v.cases) : '', skus: v?.skus != null ? String(v.skus) : '',
   dist: v?.distanceM != null ? String(v.distanceM) : '', method: v?.method ?? '',
 });
-const draftOk = (d: DeliveryDraft) => d.cases !== '' && d.method !== '';
+// only the cases are required; move method, SKUs and distance are optional
+const draftOk = (d: DeliveryDraft) => d.cases !== '';
 const deliveryOf = (d: DeliveryDraft): Delivery => ({
   cases: Number(d.cases), skus: d.skus ? Number(d.skus) : undefined,
   distanceM: d.dist ? Number(d.dist) : undefined, method: d.method || undefined,
@@ -220,10 +221,10 @@ function DeliveryFields({ d, set, autoFocus }: { d: DeliveryDraft; set: (d: Deli
           <input inputMode="numeric" placeholder="ไม่บังคับ" value={d.dist} onChange={(e) => set({ ...d, dist: digits(e.target.value) })} /></label>
       </div>
       <div>
-        <span className="ro-label">วิธีขนย้าย <span className="req">*</span></span>
+        <span className="ro-label">วิธีขนย้าย <small>(ไม่บังคับ)</small></span>
         <div className="sv-methods" role="radiogroup" aria-label="วิธีขนย้าย">
           {MOVE_METHODS.map((m) => (
-            <button key={m.code} type="button" role="radio" aria-checked={d.method === m.code} onClick={() => set({ ...d, method: m.code })}>
+            <button key={m.code} type="button" role="radio" aria-checked={d.method === m.code} onClick={() => set({ ...d, method: d.method === m.code ? '' : m.code })}>
               <span className="ii" aria-hidden>{m.code === 'trolley' ? <CartIcon /> : m.code === 'carry' ? <BoxIcon /> : <><CartIcon /><BoxIcon /></>}</span>{m.name}
             </button>
           ))}
@@ -318,7 +319,7 @@ function StartVisit({ no, stores, visits, doneToday, onStart, onAddStore }: {
     setMore({ address: '', contact: '', phone: '', note: '' });
   }
 
-  const missing = [!sel && 'เลือกร้าน', d.cases === '' && 'จำนวนลัง', d.method === '' && 'วิธีขนย้าย'].filter(Boolean) as string[];
+  const missing = [!sel && 'เลือกร้าน', d.cases === '' && 'จำนวนลัง'].filter(Boolean) as string[];
 
   return (
     <div className="sv-start">
@@ -435,7 +436,7 @@ function StartVisit({ no, stores, visits, doneToday, onStart, onAddStore }: {
  * and small tools underneath (undo a wrong tap · pick another step · cancel the store).
  * The full list of 25 codes only opens on request.
  */
-function RunningVisit({ no, v, onGo, onUndo, onCancel }: {
+export function RunningVisit({ no, v, onGo, onUndo, onCancel }: {
   no: number; v: StoreVisit; onGo: (code: string) => void; onUndo: () => void; onCancel: () => void;
 }) {
   const cur = v.segments[v.segments.length - 1];
@@ -568,8 +569,10 @@ function deliveryText(v: Delivery) {
     .filter(Boolean).join(' · ');
 }
 
-function EndVisit({ no, v, onSave, onResume }: {
+export function EndVisit({ no, v, onSave, onResume, hidePhases }: {
   no: number; v: StoreVisit; onSave: (x: Delivery) => void; onResume: () => void;
+  /** one clock per store (no A/B/C/D steps): no phase bar */
+  hidePhases?: boolean;
 }) {
   const [d, setD] = useState<DeliveryDraft>(draftOf(v));
   // details were typed in at the start: show them, edit only if the real numbers differ
@@ -585,7 +588,7 @@ function EndVisit({ no, v, onSave, onResume }: {
           <div className="note">{hhmm(v.startedAt)} – {v.endedAt && hhmm(v.endedAt)} น.</div></div>
         <div className="sv-total"><span>เวลารวม</span><b>{minutes1(secs)} นาที</b></div>
       </div>
-      <PhaseBar per={phaseSeconds(v)} />
+      {!hidePhases && <PhaseBar per={phaseSeconds(v)} />}
       {editing ? <DeliveryFields d={d} set={setD} autoFocus /> : (
         <div className="sv-picked">
           <span className="sv-picked-ico" aria-hidden><BoxIcon /></span>
@@ -595,7 +598,7 @@ function EndVisit({ no, v, onSave, onResume }: {
       )}
       {ok && n > 0 && <div className="note">≈ {(secs / 60 / n).toFixed(2)} นาทีต่อลัง</div>}
       <div className="row spread">
-        <button type="button" className="btn ghost sm" onClick={onResume}>กด D05 ผิด — กลับไปจับเวลาต่อ</button>
+        <button type="button" className="btn ghost sm" onClick={onResume}>{hidePhases ? 'กดจบผิด' : 'กด D05 ผิด'} — กลับไปจับเวลาต่อ</button>
         <button type="button" className="btn" disabled={!ok} onClick={() => onSave(deliveryOf(d))}>
           บันทึกร้านนี้ แล้วไปร้านถัดไป
         </button>
@@ -606,7 +609,7 @@ function EndVisit({ no, v, onSave, onResume }: {
 
 /* ---------------- 4. today's stores ---------------- */
 
-function TodayVisits({ visits }: { visits: StoreVisit[] }) {
+export function TodayVisits({ visits }: { visits: StoreVisit[] }) {
   const totals = useMemo(() => {
     const secs = visits.reduce((s, v) => s + visitSeconds(v), 0);
     const cases = visits.reduce((s, v) => s + (v.cases ?? 0), 0);

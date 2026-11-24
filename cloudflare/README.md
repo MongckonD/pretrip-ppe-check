@@ -223,7 +223,7 @@ Worker ต้องตรวจเอง (เพราะ SQLite ใช้ `date
 | POST | `/api/photos?date=YYYY-MM-DD` | user | body = ไฟล์รูป ≤ 5 MB, ตรวจชนิดจาก byte จริง (JPEG/PNG/WebP) |
 | GET | `/api/photos/<key>` | user | ส่งรูปจาก R2 (เบราว์เซอร์ถามใหม่ทุกครั้งผ่าน ETag → รูปที่ลบแล้วหายทันที) |
 | POST | `/api/photos/delete` | user | `{keys: [...]}` ลบเฉพาะรูปที่ **ไม่ได้** อยู่ในใบตรวจใด |
-| GET | `/api/reports/<ชื่อ>.csv` หรือ `.json` `?month=` | user | สำหรับ Excel / Power BI (ดูรายชื่อด้านล่าง) |
+| GET | `/api/reports/<ชื่อ>.csv` หรือ `.json` `?month=` | admin | สำหรับ Excel / Power BI (ดูรายชื่อด้านล่าง) |
 
 รายงาน: `daily-summary`, `daily-vehicle-status`, `daily-ppe-status`, `employee-daily`, `employee-monthly`,
 `vehicle-inspections`, `ppe-inspections`, `vehicle-item-results`, `ppe-item-results`, `mileage-check`,

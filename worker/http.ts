@@ -65,6 +65,14 @@ export function mapDbError(e: unknown): HttpError | null {
   if (msg.includes('UNIQUE constraint failed: users.employee_id')) return conflict('พนักงานคนนี้ผูกกับบัญชีอื่นอยู่แล้ว — พนักงาน 1 คนมีได้บัญชีเดียว');
   if (msg.includes('UNIQUE constraint failed: users.id')) return conflict('มีชื่อผู้ใช้นี้อยู่แล้ว');
   if (msg.includes('UNIQUE constraint failed: driver_licenses.license_no')) return conflict('เลขที่ใบขับขี่นี้ถูกใช้กับบัญชีอื่นแล้ว — ติดต่อผู้ดูแลระบบ');
+  if (msg.includes('MILEAGE_REQUIRED:')) return bad('กรอกเลขไมล์ก่อนส่ง');
+  if (msg.includes('ONE_VEHICLE_A_DAY:')) return conflict('วันนี้คุณตรวจรถคันอื่นไปแล้ว — ตรวจรถได้วันละ 1 คัน');
+  if (msg.includes('STORE_OPEN:')) return conflict('ยังมีร้านที่กำลังส่ง / ยังไม่บันทึก — จบร้านนั้นและบันทึกก่อน จึงจะจบงานได้');
+  if (msg.includes('WORK_ENDED:')) return conflict('รถคันนี้จบงานแล้ว — จับเวลาร้านค้าหรือเปลี่ยนสถานะร้านไม่ได้');
+  if (msg.includes('STORE_VISIT_FINAL:')) return conflict('ส่งสำเร็จแล้ว — แก้ไขไม่ได้');
+  if (msg.includes('STORE_VISIT_MISMATCH:')) return conflict('ร้านนี้ไม่ได้อยู่ในแผนของรถคันนี้วันนี้');
+  if (msg.includes('store_visits.trip_activity_id') || msg.includes('store_visits_one_open_uq')) return conflict('มีร้านที่กำลังจับเวลาอยู่แล้ว — จบร้านนั้นก่อน (กดรีเฟรช)');
+  if (msg.includes('store_visits.plan_id')) return conflict('ร้านนี้มีสถานะแล้ว — กดรีเฟรช');
   if (msg.includes('FOREIGN KEY constraint failed')) return conflict('ข้อมูลอ้างอิงไม่ถูกต้อง หรือมีประวัติการใช้งานอยู่');
   if (msg.includes('CHECK constraint failed')) return bad('ข้อมูลไม่ผ่านเงื่อนไขของระบบ');
   if (msg.includes('NOT NULL constraint failed')) return bad('ข้อมูลที่จำเป็นไม่ครบ');

@@ -5,7 +5,7 @@
  */
 import { failedDefects } from './api.cloudflare';
 import type {
-  DeliveryAddIn, DeliveryBill, DeliveryImportResult, DeliveryImportStop, DeliveryRowIn, DeliveryStop, ListOpts,
+  DeliveryAddIn, DeliveryBill, DeliveryImportResult, DeliveryImportStop, DeliveryRowIn, DeliveryStop, ListOpts, StoreVisitReportRow, StoreVisitSave, StoreVisitStatus,
   Defect, Employee, Master, PpeForm, PpeInspection, PpeResult, Vehicle, VehicleForm, VehicleInspection, VehResult, TripActivity,
 } from './types';
 import { licenseStatus, type DriverLicense, type LicenseForm, type LicenseInfo, type LicenseRow } from './license';
@@ -268,6 +268,10 @@ export async function saveVehicleInspection(f: VehicleForm) {
     results: Object.fromEntries(Object.entries(f.results).map(([k, v]) => [k, v])), photos: { ...f.photos },
     defects: failedDefects(f),
   };
+  // same rules as the API: the mileage every time, every active item answered
+  if (row.mileage === null) throw new Error('กรอกเลขไมล์ก่อนส่ง');
+  const missingItems = CHECK_ITEMS.filter((it) => it.active && row.results[String(it.item_no)] === undefined);
+  if (missingItems.length) throw new Error(`ตรวจให้ครบทุกข้อก่อนส่ง — ยังไม่ได้ตรวจ ${missingItems.length} ข้อ`);
   // same rule as the API: an item marked ไม่ผ่าน needs a note
   const noNote = Object.entries(row.defects ?? {}).find(([, d]) => !d.note);
   if (noNote) throw new Error(`ระบุหมายเหตุของข้อ ${noNote[0]} ที่ไม่ผ่าน`);
@@ -400,6 +404,7 @@ export async function listTripActivities(opts: ListOpts) {
 
 
 export async function deleteTripActivity(id: string) {
+  if ((dpLoad().visits ?? []).some((v) => v.trip_id === id)) throw new Error('รถคันนี้มีการจับเวลาร้านค้าของวันนี้แล้ว — ลบบันทึกเริ่มงานไม่ได้');
   const db = load();
   db.trips = db.trips.filter((t) => t.id !== id);
   persist();
@@ -425,6 +430,9 @@ export async function endWork(id: string) {
   const t = load().trips.find((x) => x.id === id);
   if (!t) throw new Error('ไม่พบบันทึกนี้');
   if (t.work_ended_at) throw new Error('จบงานไปแล้ว');
+  const dd = dpLoad();
+  const open = (dd.visits ?? []).find((v) => v.trip_id === id && v.status === 'open');
+  if (open) throw new Error(`ยังส่ง ${dd.plan.find((p) => p.id === open.plan_id)?.snap?.name ?? 'ร้านค้า'} ไม่เสร็จ — จบร้านนั้นและบันทึกก่อน จึงจะจบงานได้`);
   t.work_ended_at = new Date().toISOString();
   persist();
   return { id, work_ended_at: t.work_ended_at };
@@ -472,7 +480,9 @@ export const licensePhotoUrl = (_id: string) => licPhoto ?? '';
 /* ---------- ร้านค้าที่ต้องส่ง (test mode: same rules as worker/delivery-routes.ts, kept in this browser) ---------- */
 /** snap = the store name / type / address as of that day (history does not follow later changes) */
 interface MockPlanRow { id: string; date: string; plate: string; code: string; sort: number; bills: DeliveryBill[]; snap?: { name: string; type: string; address: string } }
-interface MockDelivery { stores: Record<string, { name: string; type: string; address: string }>; plan: MockPlanRow[] }
+/** store timer: the status of a plan row (same rules as worker/store-visit-routes.ts) */
+type MockVisit = StoreVisitStatus & { plan_id: string; trip_id: string };
+interface MockDelivery { stores: Record<string, { name: string; type: string; address: string }>; plan: MockPlanRow[]; visits?: MockVisit[] }
 const DP_KEY = 'pretrip-mock-delivery-v1';
 function dpLoad(): MockDelivery {
   try { return JSON.parse(localStorage.getItem(DP_KEY) ?? 'null') ?? { stores: {}, plan: [] }; } catch { return { stores: {}, plan: [] }; }
@@ -509,6 +519,7 @@ export async function listDeliveryPlan(date: string, plate?: string): Promise<De
       return {
         id: p.id, plate: p.plate, code: p.code, name: st.name, type: st.type, address: st.address, bills: p.bills,
         cases: p.bills.some((b) => b.cases !== null) ? p.bills.reduce((n, b) => n + (b.cases ?? 0), 0) : null,
+        visit: dpVisitOut((d.visits ?? []).find((v) => v.plan_id === p.id)),
       };
     });
 }
@@ -563,6 +574,10 @@ function dpCheck(fallback: string, mode: 'replace' | 'append', rows: DeliveryRow
       if (was.plate !== st.plate) errors.push(`แถว ${st.lines[0]}: ${st.name} (${st.code}) วันที่ ${st.date} อยู่ในรถ ${was.plate} แล้ว — ร้านเดียวกันส่งได้คันเดียว`);
       else { st.existing_id = was.id; st.existing = true; }
     }
+  }
+  if (mode === 'replace') {
+    const locked = dpLocked(d, d.plan.filter((p) => dates.includes(p.date)));
+    if (locked.length) errors.push(`แทนที่ไม่ได้: ${dpLockedText(locked)} — ใช้ "เพิ่ม" แทน`);
   }
   const wiped = new Set(mode === 'replace' ? dates : []);
   for (const [bill, key] of billAt) {
@@ -636,6 +651,8 @@ export async function removeDeliveryStop(id: string) {
   const d = dpLoad();
   const row = d.plan.find((p) => p.id === id);
   if (row) { const closed = dpClosed(row.date); if (closed) throw new Error(closed); }
+  const locked = row ? dpLocked(d, [row]) : [];
+  if (locked.length) throw new Error(`ลบไม่ได้: ${dpLockedText(locked)}`);
   d.plan = d.plan.filter((p) => p.id !== id);
   dpSave(d);
   return { ok: true as const };
@@ -646,7 +663,153 @@ export async function clearDeliveryPlan(date: string) {
   const closed = dpClosed(date);
   if (closed) throw new Error(closed);
   const d = dpLoad();
+  const locked = dpLocked(d, d.plan.filter((p) => p.date === date));
+  if (locked.length) throw new Error(`ล้างทั้งวันไม่ได้: ${dpLockedText(locked)}`);
   d.plan = d.plan.filter((p) => p.date !== date);
   dpSave(d);
   return { ok: true as const };
+}
+
+/* ---------- store timer (test mode: same rules as worker/store-visit-routes.ts, kept in this browser) ---------- */
+const DP_STATUS: Record<string, string> = { open: 'กำลังส่ง', done: 'ส่งสำเร็จแล้ว', failed: 'ส่งไม่สำเร็จ' };
+function dpVisitOut(v: MockVisit | undefined): StoreVisitStatus | null {
+  if (!v) return null;
+  const { plan_id: _p, trip_id: _t, ...out } = v;
+  return out;
+}
+function dpLocked(d: MockDelivery, rows: MockPlanRow[]) {
+  return rows.flatMap((p) => {
+    const v = (d.visits ?? []).find((x) => x.plan_id === p.id);
+    return v ? [`${p.snap?.name ?? p.code} (รถ ${p.plate} · ${DP_STATUS[v.status]})`] : [];
+  });
+}
+const dpLockedText = (names: string[]) =>
+  `มีร้านที่บันทึกสถานะการส่งแล้ว ${names.length} ร้าน: ${names.slice(0, 5).join(', ')}${names.length > 5 ? ' …' : ''} — ร้านเหล่านี้เอาออกจากแผนไม่ได้`;
+/** the plan row, today's work record of its vehicle, and the checks the Worker does */
+function dpCtx(planId: string) {
+  const d = dpLoad();
+  const p = d.plan.find((x) => x.id === planId);
+  if (!p) throw new Error('ไม่พบร้านนี้ในแผนส่ง (อาจถูกลบไปแล้ว) — กดรีเฟรช');
+  if (p.date !== today()) throw new Error('จับเวลาได้เฉพาะร้านของวันนี้');
+  const db = load();
+  const veh = db.vehicles.find((v) => dpPlateKey(v.plate) === dpPlateKey(p.plate));
+  const trip = db.trips.find((t) => t.activity_date === p.date && t.vehicle_id === veh?.id);
+  if (!trip) throw new Error(`กด "เริ่มการทำงาน" ของรถ ${p.plate} ก่อน จึงจะจับเวลาร้านค้าได้`);
+  if (trip.work_ended_at) throw new Error(`รถ ${p.plate} จบงานแล้ว — จับเวลาร้านค้าหรือเปลี่ยนสถานะร้านไม่ได้`);
+  const visits = (d.visits ??= []);
+  return { d, visits, p, trip, name: p.snap?.name ?? p.code };
+}
+function dpVisitCtx(id: string) {
+  const found = (dpLoad().visits ?? []).find((x) => x.id === id);
+  if (!found) throw new Error('ไม่พบรายการนี้ (อาจถูกยกเลิกไปแล้ว) — กดรีเฟรช');
+  const c = dpCtx(found.plan_id);
+  const v = c.visits.find((x) => x.id === id);
+  if (!v) throw new Error('ไม่พบรายการนี้ — กดรีเฟรช');
+  return { ...c, v };
+}
+/** test mode has no signed-in account */
+const TEST_BY = 'ผู้ทดสอบ';
+
+export async function startStoreVisit(planId: string) {
+  await tick();
+  const { d, visits, p, trip, name } = dpCtx(planId);
+  const same = visits.find((v) => v.plan_id === p.id);
+  if (same) {
+    throw new Error(same.status === 'done' ? `${name} ส่งไปแล้ววันนี้`
+      : same.status === 'failed' ? `${name} บันทึกว่าส่งไม่สำเร็จแล้ว — ยกเลิกสถานะนั้นก่อนถ้าจะส่งใหม่` : `${name} กำลังจับเวลาอยู่แล้ว`);
+  }
+  const other = visits.find((v) => v.trip_id === trip.id && v.status === 'open');
+  if (other) throw new Error(`กำลังจับเวลา ${d.plan.find((x) => x.id === other.plan_id)?.snap?.name ?? 'ร้านอื่น'} อยู่ — จบร้านนั้นก่อน`);
+  const now = new Date().toISOString();
+  const v: MockVisit = {
+    id: uuid(), plan_id: p.id, trip_id: trip.id, status: 'open', started_at: now, ended_at: null,
+    cases: null, skus: null, distance_m: null, method: null, note: '', by: TEST_BY,
+  };
+  visits.push(v);
+  dpSave(d);
+  return { id: v.id, started_at: now };
+}
+export async function endStoreVisit(id: string) {
+  await tick();
+  const { d, v } = dpVisitCtx(id);
+  if (v.status !== 'open') throw new Error('ร้านนี้ไม่ได้กำลังจับเวลาอยู่ — กดรีเฟรช');
+  v.ended_at ??= new Date().toISOString();
+  dpSave(d);
+  return { id, ended_at: v.ended_at };
+}
+export async function resumeStoreVisit(id: string) {
+  await tick();
+  const { d, v } = dpVisitCtx(id);
+  if (v.status !== 'open') throw new Error('บันทึกร้านนี้ไปแล้ว — แก้ไม่ได้');
+  v.ended_at = null;
+  dpSave(d);
+  return { ok: true as const };
+}
+export async function saveStoreVisit(id: string, b: StoreVisitSave) {
+  await tick();
+  const { d, v } = dpVisitCtx(id);
+  if (v.status !== 'open') throw new Error('บันทึกร้านนี้ไปแล้ว');
+  if (!v.ended_at) throw new Error('กด "รถออกจากร้าน" ก่อน แล้วค่อยบันทึก');
+  if (!Number.isInteger(b.cases) || b.cases < 0 || b.cases > 100000) throw new Error('กรอกจำนวนลังที่ส่ง');
+  Object.assign(v, { status: 'done', cases: b.cases, skus: b.skus ?? null, distance_m: b.distance_m ?? null, method: b.method ?? null });
+  dpSave(d);
+  return { ok: true as const };
+}
+export async function failStoreVisit(planId: string, note: string) {
+  await tick();
+  const { d, visits, p, trip, name } = dpCtx(planId);
+  const n = note.trim().replace(/\s+/g, ' ');
+  if (!n) throw new Error('เขียนหมายเหตุก่อนว่าทำไมส่งไม่สำเร็จ');
+  if (n.length > 300) throw new Error('หมายเหตุยาวเกิน 300 ตัวอักษร');
+  const cur = visits.find((v) => v.plan_id === p.id);
+  if (cur) {
+    throw new Error(cur.status === 'done' ? `${name} ส่งไปแล้ววันนี้`
+      : cur.status === 'open' ? `${name} กำลังจับเวลาอยู่ — ยกเลิกร้านนั้นก่อน` : `${name} บันทึกว่าส่งไม่สำเร็จแล้ว`);
+  }
+  const v: MockVisit = {
+    id: uuid(), plan_id: p.id, trip_id: trip.id, status: 'failed', started_at: null, ended_at: null,
+    cases: null, skus: null, distance_m: null, method: null, note: n, by: TEST_BY,
+  };
+  visits.push(v);
+  dpSave(d);
+  return { id: v.id };
+}
+export async function deleteStoreVisit(id: string) {
+  await tick();
+  const { d, v } = dpVisitCtx(id);
+  if (v.status === 'done') throw new Error('ส่งสำเร็จแล้ว — ยกเลิกไม่ได้');
+  d.visits = (d.visits ?? []).filter((x) => x.id !== id);
+  dpSave(d);
+  return { ok: true as const };
+}
+export async function devResetStoreVisits(plate: string) {
+  await tick();
+  const d = dpLoad();
+  const mine = new Set(d.plan.filter((p) => p.date === today() && dpPlateKey(p.plate) === dpPlateKey(plate)).map((p) => p.id));
+  d.visits = (d.visits ?? []).filter((v) => !mine.has(v.plan_id));
+  dpSave(d);
+  return { ok: true as const };
+}
+
+/** admin report (same rows as the view v_store_visit_summary) */
+export async function listStoreVisitReport(from: string, to: string): Promise<StoreVisitReportRow[]> {
+  await tick();
+  const d = dpLoad();
+  const db = load();
+  const rows = d.plan.filter((p) => p.date >= from && p.date <= to).map((p): StoreVisitReportRow => {
+    const st = p.snap ?? d.stores[p.code] ?? { name: p.code, type: '', address: '' };
+    const v = (d.visits ?? []).find((x) => x.plan_id === p.id);
+    const veh = db.vehicles.find((x) => dpPlateKey(x.plate) === dpPlateKey(p.plate));
+    const trip = db.trips.find((t) => t.activity_date === p.date && t.vehicle_id === veh?.id);
+    return {
+      plan_id: p.id, plan_date: p.date, plate: p.plate, sort_order: p.sort, sap_code: p.code, store_name: st.name, store_type: st.type,
+      bills: p.bills.length, plan_cases: p.bills.some((b) => b.cases !== null) ? p.bills.reduce((n, b) => n + (b.cases ?? 0), 0) : null,
+      status: v?.status ?? 'none', started_at: v?.started_at ?? null, ended_at: v?.ended_at ?? null,
+      seconds: v?.status === 'done' && v.started_at && v.ended_at ? Math.round((Date.parse(v.ended_at) - Date.parse(v.started_at)) / 1000) : null,
+      cases: v?.cases ?? null, skus: v?.skus ?? null, distance_m: v?.distance_m ?? null, move_method: v?.method ?? null,
+      note: v?.note ?? '', by_name: v?.by || null, dman_name: trip ? (db.employees.find((e) => e.id === trip.dman_id)?.name ?? null) : null,
+    };
+  });
+  return rows.sort((a, b) => b.plan_date.localeCompare(a.plan_date) || a.plate.localeCompare(b.plate)
+    || (a.started_at ?? '9').localeCompare(b.started_at ?? '9') || a.sort_order - b.sort_order);
 }
