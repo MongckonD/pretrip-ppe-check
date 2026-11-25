@@ -271,7 +271,7 @@ npm run dev:cf
 npm run deploy
 ```
 - ถ้าแก้ migration ใหม่: `npm run db:migrate:remote` ก่อน deploy · ถ้าแก้ `wrangler.toml`: `npm run cf-types`
-- เว็บจริงตอนนี้: https://pretrip-ppe-check.pretrip-ppe-check.workers.dev — ไม่ได้ใช้ Cloudflare Access แล้ว (login ผ่านแอป)
+- เว็บจริงตอนนี้: https://dtrip.heyrockydev.com (ลิงก์เดิม workers.dev ปิดแล้ว 2026-11-25) — ไม่ได้ใช้ Cloudflare Access แล้ว (login ผ่านแอป)
 - ลืมรหัสผ่าน: admin ตั้งรหัสผ่านใหม่ให้ที่แท็บตั้งค่า → ผู้ใช้งานระบบ (ใช้ได้ทันที)
 - admin ลืมรหัสเองและไม่มี admin คนอื่น: ให้ผู้ดูแลเครื่องรันคำสั่ง SQL ใน D1 Console ตั้ง `password_hash` ใหม่ (ควรมี admin อย่างน้อย 2 คนกันกรณีนี้)
 

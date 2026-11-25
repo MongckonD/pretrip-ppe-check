@@ -5,6 +5,13 @@ name = "pretrip-ppe-check"
 main = "worker/index.ts"
 compatibility_date = "2026-11-01"
 
+# เว็บจริง: https://dtrip.heyrockydev.com (โดเมนอยู่ในบัญชี Cloudflare เดียวกัน — Cloudflare สร้าง DNS + ใบรับรอง HTTPS ให้เอง)
+# ลิงก์เดิม https://pretrip-ppe-check.pretrip-ppe-check.workers.dev ปิดแล้ว (2026-11-25) — เปิดกลับได้ด้วย workers_dev = true
+workers_dev = false
+routes = [
+  { pattern = "dtrip.heyrockydev.com", custom_domain = true },
+]
+
 # หน้าเว็บ React ที่ build แล้ว (/api/* ไปที่ Worker ก่อน ที่เหลือเสิร์ฟไฟล์ตรง)
 [assets]
 directory = "./dist"

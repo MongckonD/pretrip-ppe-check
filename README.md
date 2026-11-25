@@ -10,7 +10,7 @@
 
 | ส่วน | สถานะ |
 |---|---|
-| หน้าเว็บ | ✅ https://pretrip-ppe-check.pretrip-ppe-check.workers.dev — ใช้ข้อมูลจริง |
+| หน้าเว็บ | ✅ https://dtrip.heyrockydev.com — ใช้ข้อมูลจริง (ลิงก์เดิม workers.dev ปิดแล้ว) |
 | D1 `pretrip-ppe` | ✅ สร้างบน Cloudflare และรัน migration แล้ว |
 | R2 `pretrip-inspection-photos` | ✅ สร้างแล้ว (private) — รูปตรวจรถ |
 | R2 `pretrip-driver-licenses` | ✅ สร้างแล้ว (private) — รูปใบขับขี่โดยเฉพาะ |
