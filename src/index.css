@@ -1351,3 +1351,8 @@ tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 
 /* admin home: เวลาส่งสินค้าที่ร้าน — the หมายเหตุ column wraps */
 .stt-note { white-space: normal; min-width: 140px; max-width: 260px; }
+
+/* admin ข้อมูลการตรวจ: one data table per tab */
+.dt-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.dt-tabs button { font: inherit; font-size: 14px; font-weight: 700; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+.dt-tabs button[aria-selected='true'] { background: var(--brand); border-color: var(--brand); color: #fff; }

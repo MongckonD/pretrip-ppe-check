@@ -46,6 +46,10 @@ function sql(command) {
     const out = wrangler(['d1', 'execute', DB, '--local', '--json', '--file', file]);
     const res = JSON.parse(out.slice(out.indexOf('[')));
     return res[res.length - 1]?.results ?? [];
+  } catch (e) {
+    // keep wrangler's own message (the SQL error) in the error, not only "Command failed"
+    const detail = `${e.stdout ?? ''} ${e.stderr ?? ''}`.replace(/\s+/g, ' ').trim().slice(0, 600);
+    throw new Error(`${String(e.message).split('\n')[0]} — ${detail}`);
   } finally {
     rmSync(file, { force: true });
   }
@@ -132,6 +136,8 @@ function cleanup() {
        DELETE FROM delivery_plan WHERE store_id IN (SELECT id FROM stores WHERE sap_code LIKE 'ZT-%');
        DELETE FROM stores WHERE sap_code LIKE 'ZT-%';
        ${ids ? `DELETE FROM vehicle_inspections WHERE id IN (${ids});` : ''}
+       -- the fixed test ids, from any day (a run left on another day would block today's insert)
+       DELETE FROM vehicle_inspections WHERE id IN ('zt-other-team', 'zt-timer-check');
        DELETE FROM vehicle_inspections WHERE vehicle_id IN (SELECT id FROM vehicles WHERE plate LIKE 'ZT-%');
        DELETE FROM vehicles WHERE plate LIKE 'ZT-%';
        DELETE FROM sessions WHERE user_agent = ${q(UA)};`);

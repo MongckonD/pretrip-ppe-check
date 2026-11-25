@@ -9,10 +9,9 @@ import { ActiveSwitch, CFG_PAGE, CfgHead, CfgPager } from '../components/CfgUi';
 import { useMaster } from '../components/MasterContext';
 import { UsersPanel } from '../components/UsersPanel';
 import { ImportBox } from '../components/ImportEmployees';
-import { ConfirmDelete } from '../components/Fields';
 import { TruckIcon, UserIcon } from '../components/Icons';
 import { useToast } from '../components/Toast';
-import { deleteEmployee, deleteVehicle, isTestMode, resetDemo, upsertEmployee, upsertVehicle } from '../lib/api';
+import { isTestMode, resetDemo, upsertEmployee, upsertVehicle } from '../lib/api';
 import type { Employee, Vehicle } from '../lib/types';
 import { errMsg, pad2 } from '../lib/utils';
 
@@ -33,7 +32,7 @@ export function SettingsPage() {
   const me = useMe();
   const toast = useToast();
   const [emps, setEmps] = useState<Employee[]>(master.employees);
-  const [vehs, setVehs] = useState<Vehicle[]>(() => master.vehicles.filter((v) => v.active));
+  const [vehs, setVehs] = useState<Vehicle[]>(master.vehicles);
   const [newPlate, setNewPlate] = useState('');
   const [newType, setNewType] = useState('');
   const [empPage, setEmpPage] = useState(0);
@@ -47,8 +46,8 @@ export function SettingsPage() {
 
   useEffect(() => setEmps((prev) => master.employees.map((m) =>
     dirtyEmp.current.has(m.id) ? prev.find((p) => p.id === m.id) ?? m : m)), [master.employees]);
-  // รถที่ลบแล้วแต่มีประวัติ ระบบจะปิดใช้งานไว้แทน จึงไม่แสดงในรายการ (เพิ่มทะเบียนเดิมใหม่ = เปิดใช้งานคืน)
-  useEffect(() => setVehs((prev) => master.vehicles.filter((v) => v.active).map((m) =>
+  // no delete: a vehicle / employee no longer used is switched off (its history stays); every vehicle is listed, on and off
+  useEffect(() => setVehs((prev) => master.vehicles.map((m) =>
     dirtyVeh.current.has(m.id) ? prev.find((p) => p.id === m.id) ?? m : m)), [master.vehicles]);
 
   async function run(fn: () => Promise<void>, ok = 'บันทึกแล้ว') {
@@ -88,8 +87,6 @@ export function SettingsPage() {
       setEmpPage(Math.floor(emps.length / CFG_PAGE)); // the new row is the last one: show its page
     }, `เพิ่ม ${name} แล้ว`);
   }
-  /** only rows without history / account — the server says why otherwise */
-  const delEmp = (e: Employee) => run(() => deleteEmployee(e.id), `ลบ ${e.name || e.code || 'แถวว่าง'} แล้ว`);
 
   const editVeh = (i: number, patch: Partial<Vehicle>) => {
     dirtyVeh.current.add(vehs[i].id);
@@ -104,6 +101,12 @@ export function SettingsPage() {
     run(() => upsertVehicle({ ...v, plate: v.plate.trim() }));
   };
 
+  /** switch a vehicle on / off (the server refuses to switch off a vehicle that still has stores to deliver) */
+  const toggleVeh = (v: Vehicle) => {
+    dirtyVeh.current.delete(v.id);
+    run(() => upsertVehicle({ ...v, plate: v.plate.trim(), active: !v.active }), v.active ? `ปิดใช้งานรถ ${v.plate} แล้ว` : `เปิดใช้งานรถ ${v.plate} แล้ว`);
+  };
+
   function addVeh() {
     if (!newPlate.trim()) return toast('กรอกทะเบียนก่อน');
     run(async () => {
@@ -113,6 +116,7 @@ export function SettingsPage() {
   }
 
   const activeEmps = emps.filter((e) => e.active).length;
+  const activeVehs = vehs.filter((v) => v.active).length;
   // 10 rows per page; the page number is clamped when the list gets shorter
   const ep = Math.min(empPage, Math.max(0, Math.ceil(emps.length / CFG_PAGE) - 1));
   const vp = Math.min(vehPage, Math.max(0, Math.ceil(vehs.length / CFG_PAGE) - 1));
@@ -145,7 +149,6 @@ export function SettingsPage() {
               </select>
               <div className="row cfg-state">
                 <ActiveSwitch on={e.active} label={`สถานะ แถวที่ ${i + 1}`} onToggle={() => saveEmpRow({ ...e, active: !e.active })} />
-                <ConfirmDelete onConfirm={() => delEmp(e)} />
               </div>
             </div>
           ); })}
@@ -172,26 +175,27 @@ export function SettingsPage() {
             </div>
           </>)}
         </div>
-        <p className="note cfg-foot">ลบได้เฉพาะพนักงานที่ยังไม่มีประวัติและไม่มีบัญชี · คนที่มีประวัติแล้วให้ปิดสถานะเป็น "ปิดอยู่" แทน</p>
+        <p className="note cfg-foot">พนักงานที่ไม่ใช้แล้วให้ปิดสถานะเป็น "ปิดอยู่" — ประวัติยังอยู่ครบ และเปิดกลับได้ทุกเมื่อ</p>
       </section>
 
       <section className="panel cfg-box">
-        <CfgHead icon={<TruckIcon />} title="ทะเบียนรถ" count={`${vehs.length} คัน`} />
+        <CfgHead icon={<TruckIcon />} title="ทะเบียนรถ" count={`${activeVehs}/${vehs.length} ใช้งาน`} />
         <div className="cfg-table">
           {vehs.length > 0 && (
-            <div className="cfg-row v cfg-th" aria-hidden><span>ทะเบียน</span><span>ประเภทรถ</span><span /></div>
+            <div className="cfg-row v cfg-th" aria-hidden><span>ทะเบียน</span><span>ประเภทรถ</span><span>สถานะ</span></div>
           )}
           {vehs.length ? vehs.slice(vp * CFG_PAGE, vp * CFG_PAGE + CFG_PAGE).map((v, k) => { const i = vp * CFG_PAGE + k; return (
-            <div className="cfg-row v" key={v.id}>
+            <div className={`cfg-row v ${v.active ? '' : 'off'}`} key={v.id}>
               <input aria-label="ทะเบียน" placeholder="ทะเบียน" value={v.plate}
                 onChange={(ev) => editVeh(i, { plate: ev.target.value })} onBlur={() => saveVeh(i)} />
               <input aria-label="ประเภทรถ" placeholder="ประเภทรถ" value={v.type}
                 onChange={(ev) => editVeh(i, { type: ev.target.value })} onBlur={() => saveVeh(i)} />
-              <div className="row cfg-del"><ConfirmDelete onConfirm={() => run(() => deleteVehicle(v.id), 'ลบแล้ว')} /></div>
+              <div className="row cfg-state"><ActiveSwitch on={v.active} label={`สถานะ รถ ${v.plate}`} onToggle={() => toggleVeh(v)} /></div>
             </div>
           ); }) : <div className="empty">ยังไม่มีทะเบียนรถ เพิ่มแล้วจะเลือกได้ในแท็บตรวจรถและ PPE</div>}
         </div>
         <CfgPager page={vp} total={vehs.length} onPage={setVehPage} />
+        <p className="note cfg-foot">รถที่ไม่ใช้แล้วให้ปิดสถานะ — ประวัติยังอยู่ครบ รถที่ปิดอยู่จะไม่ขึ้นให้เลือกตอนตรวจรถ</p>
         <div className="cfg-add">
           <b className="cfg-add-title">เพิ่มรถคันใหม่</b>
           <div className="cfg-row v">
