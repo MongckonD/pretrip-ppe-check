@@ -5,6 +5,7 @@
  * Details live in the other tabs (สถานะรถ, PPE, สรุป). Every box has its own CSV download (opens in Excel)
  * with the RECORDS behind the numbers — plate, date, people (code + name), failed items, missing PPE — not only counts.
  */
+import { RefreshButton } from '../components/RefreshButton';
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart, PctBarChart } from '../components/Charts';
 import { useMaster } from '../components/MasterContext';
@@ -48,15 +49,17 @@ export function DashboardPage({ month, setMonth }: { month: string; setMonth: (m
   const [cur, setCur] = useState<Month | null>(null);
   const [error, setError] = useState('');
 
-  // only the chosen month is loaded (no previous month: half the D1 reads)
+  // only the chosen month is loaded (no previous month: half the D1 reads); "รีเฟรช" bumps reloadKey
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     let alive = true;
-    setCur(null); setError('');
+    if (!reloadKey) setCur(null); // a refresh keeps the charts on screen until the new data is in
+    setError('');
     loadMonth(month)
       .then((a) => { if (alive) setCur(a); })
       .catch((e) => { if (alive) setError(errMsg(e)); });
     return () => { alive = false; };
-  }, [month]);
+  }, [month, reloadKey]);
 
   const s = useMemo(() => (cur ? stats(cur) : null), [cur]);
 
@@ -177,6 +180,7 @@ export function DashboardPage({ month, setMonth }: { month: string; setMonth: (m
             <button type="button" className="btn ghost sm" onClick={() => setMonth(prevMonth(month))} aria-label="เดือนก่อน">‹</button>
             <input type="month" aria-label="เดือน" value={month} max={today().slice(0, 7)} onChange={(e) => e.target.value && setMonth(e.target.value)} />
             <button type="button" className="btn ghost sm" disabled={month >= today().slice(0, 7)} onClick={() => setMonth(nextMonth(month))} aria-label="เดือนถัดไป">›</button>
+            <RefreshButton onRefresh={() => setReloadKey((k) => k + 1)} />
           </div>
         </div>
         {error && <div className="error">{error}</div>}

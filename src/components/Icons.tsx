@@ -267,3 +267,22 @@ export const PersonAvatar = () => (
     <path d="M6.5 37c1.2-7.4 6.6-11.5 13.5-11.5S32.3 29.6 33.5 37z" fill="currentColor" />
   </svg>
 );
+export const LockIcon = () => (
+  <Svg>
+    <rect x="5" y="10.5" width="14" height="10" rx="2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    <circle cx="12" cy="15.5" r="1" />
+  </Svg>
+);
+export const EyeIcon = () => (
+  <Svg>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);
+export const EyeOffIcon = () => (
+  <Svg>
+    <path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.6 3.3M6.6 7.6C4 9.4 2.5 12 2.5 12S6 18.5 12 18.5c1.8 0 3.3-.5 4.6-1.2" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
+  </Svg>
+);

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, type FormEvent, type ReactNode } f
 import { changePassword, login, setupAdmin, type Me } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { APP_VERSION } from '../lib/features';
+import { EyeIcon, EyeOffIcon, LockIcon, UserIcon } from './Icons';
 
 /** The signed-in user (null in test mode). */
 export const MeContext = createContext<Me | null>(null);
@@ -26,16 +27,21 @@ function Card(props: { title: string; sub?: string; children: ReactNode }) {
   );
 }
 
-function PasswordInput(props: { label: string; value: string; onChange: (v: string) => void; autoComplete: string; autoFocus?: boolean }) {
+/** password box: lock icon in front, eye button inside to show / hide what was typed */
+function PasswordInput(props: {
+  label: string; value: string; onChange: (v: string) => void; autoComplete: string; autoFocus?: boolean; placeholder?: string;
+}) {
   const [show, setShow] = useState(false);
   return (
-    <label>{props.label}
-      <div className="pw">
+    <label className="fld-label">{props.label}
+      <span className="fld">
+        <span className="fld-ico" aria-hidden><LockIcon /></span>
         <input type={show ? 'text' : 'password'} value={props.value} autoComplete={props.autoComplete}
+          placeholder={props.placeholder ?? 'กรุณากรอกรหัสผ่าน'}
           autoFocus={props.autoFocus} onChange={(e) => props.onChange(e.target.value)} required />
-        <button type="button" className="btn ghost sm" onClick={() => setShow((s) => !s)}
-          aria-label={show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}>{show ? 'ซ่อน' : 'แสดง'}</button>
-      </div>
+        <button type="button" className="fld-eye" onClick={() => setShow((s) => !s)}
+          aria-label={show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'} aria-pressed={show}>{show ? <EyeOffIcon /> : <EyeIcon />}</button>
+      </span>
     </label>
   );
 }
@@ -60,9 +66,12 @@ export function LoginForm({ onDone, notice }: { onDone: (me: Me) => void; notice
     <Card title="เข้าสู่ระบบ">
       <form className="login-form" onSubmit={submit}>
         {notice && <div className="login-notice" role="status">{notice}</div>}
-        <label>รหัสพนักงาน
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
-            placeholder="เช่น 650123" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoFocus required />
+        <label className="fld-label">รหัสพนักงาน
+          <span className="fld">
+            <span className="fld-ico" aria-hidden><UserIcon /></span>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username"
+              placeholder="กรุณากรอกรหัสพนักงาน" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoFocus required />
+          </span>
         </label>
         <PasswordInput label="รหัสผ่าน" value={password} onChange={setPassword} autoComplete="current-password" />
         {error && <div className="form-error" role="alert">{error}</div>}

@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useMaster, type MasterCtx } from '../components/MasterContext';
+import { RefreshButton } from '../components/RefreshButton';
 import { listPpeInspections, listStoreVisitReport, listTripActivities, listVehicleInspections } from '../lib/api';
 import { FEATURES } from '../lib/features';
 import { hhmm } from '../lib/storeVisit';
@@ -145,7 +146,7 @@ const lastDay = (month: string) => { const d = new Date(`${month}-01T00:00`); d.
 interface Part { key?: string; title?: string; note?: string; table: Table }
 
 /** the open tab's tables for the month (only that tab is read) */
-function useTabData(tab: Tab, month: string) {
+function useTabData(tab: Tab, month: string, reloadKey: number) {
   const master = useMaster();
   const [state, setState] = useState<{ key: string; tables: Part[] | null; error: string }>({ key: '', tables: null, error: '' });
   const key = `${tab}|${month}`;
@@ -167,7 +168,7 @@ function useTabData(tab: Tab, month: string) {
     load().then((tables) => { if (alive) setState({ key, tables, error: '' }); })
       .catch((e) => { if (alive) setState({ key, tables: null, error: errMsg(e) }); });
     return () => { alive = false; };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return state.key === key ? state : { key, tables: null, error: '' };
 }
 
@@ -176,7 +177,9 @@ export function DataPage({ month, setMonth }: { month: string; setMonth: (m: str
   const [tab, setTabRaw] = useState<Tab>(() => { const t = readTab(); return tabs.some((x) => x.key === t) ? t : 'car'; });
   const setTab = (t: Tab) => { setTabRaw(t); try { localStorage.setItem(TAB_KEY, t); } catch { /* storage unavailable */ } };
   const cur = tabs.find((t) => t.key === tab) ?? tabs[0];
-  const { tables, error } = useTabData(cur.key, month);
+  // "รีเฟรช": read the open tab again
+  const [reloadKey, setReloadKey] = useState(0);
+  const { tables, error } = useTabData(cur.key, month, reloadKey);
 
   return (
     <>
@@ -186,7 +189,10 @@ export function DataPage({ month, setMonth }: { month: string; setMonth: (m: str
             <h2 className="flush">ตารางข้อมูล</h2>
             <span className="note">ข้อมูลดิบรายเดือน · เลือกแท็บแล้วดาวน์โหลด CSV ไปใช้ต่อใน Excel ได้</span>
           </div>
-          <label className="month-pick">เดือน<input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></label>
+          <div className="row">
+            <label className="month-pick">เดือน<input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></label>
+            <RefreshButton onRefresh={() => setReloadKey((k) => k + 1)} />
+          </div>
         </div>
         <div className="dt-tabs" role="tablist" aria-label="ตารางข้อมูล">
           {tabs.map((t) => (

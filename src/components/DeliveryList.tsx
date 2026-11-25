@@ -6,7 +6,8 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { FEATURES } from '../lib/features';
 import { useNow } from './Fields';
-import { PinIcon, RefreshIcon, StoreIcon } from './Icons';
+import { PinIcon, StoreIcon } from './Icons';
+import { RefreshButton } from './RefreshButton';
 import { CheckPicker, NoCheckYet, useTodayChecks } from './TodayChecks';
 import { listDeliveryPlan } from '../lib/api';
 import { storeTypeName, type StoreType } from '../lib/storeVisit';
@@ -25,7 +26,7 @@ export function DeliveryList({ goVehicle, goWork }: { goVehicle?: () => void; go
 
   const [stops, setStops] = useState<DeliveryStop[] | null>(null);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   // stores whose bill list is open
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setOpenIds((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -39,7 +40,7 @@ export function DeliveryList({ goVehicle, goWork }: { goVehicle?: () => void; go
   useEffect(() => { setStops(null); load(); }, [load]);
   // store timer: "รีเฟรช" also re-reads the vehicle's work record
   const [refreshKey, setRefreshKey] = useState(0);
-  const refresh = () => { setRefreshKey((x) => x + 1); load(); };
+  const refresh = () => { setRefreshKey((x) => x + 1); return load(); };
 
   if (checks === null) return <div className="empty">กำลังโหลด…</div>;
   if (!checks.length) return <NoCheckYet title="ร้านค้าที่ต้องส่ง" then="รายการร้านของรถคันนั้นจะขึ้นที่นี่" goVehicle={goVehicle} />;
@@ -57,9 +58,7 @@ export function DeliveryList({ goVehicle, goWork }: { goVehicle?: () => void; go
             {stops === null ? 'กำลังโหลด…' : list.length ? `${list.length} ร้าน · ${bills} บิล${cases !== null ? ` · ${casesText(cases)} ลัง` : ''}` : ''}
           </span>
         </div>
-        <button type="button" className="btn ghost sm" disabled={loading} onClick={refresh}>
-          <span className="ii" aria-hidden><RefreshIcon /></span>{loading ? 'กำลังโหลด…' : 'รีเฟรช'}
-        </button>
+        <RefreshButton onRefresh={refresh} />
       </div>
       <CheckPicker checks={checks} selId={selId} onPick={setSelId} />
       {error && <div className="form-error" role="alert">{error}</div>}

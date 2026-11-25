@@ -4,7 +4,8 @@ import { useMe } from '../components/Auth';
 import { useMaster } from '../components/MasterContext';
 import { EmployeeSelect, PlateInput, ReadOnlyField, Seg, fromIso, thaiClock, thaiDay, useNow, useSignedUrls } from '../components/Fields';
 import { ConfirmButton } from '../components/ConfirmButton';
-import { CheckCircleIcon, HourglassIcon, RefreshIcon, XCircleIcon } from '../components/Icons';
+import { CheckCircleIcon, HourglassIcon, XCircleIcon } from '../components/Icons';
+import { RefreshButton } from '../components/RefreshButton';
 import { useToast } from '../components/Toast';
 import { listVehicleInspections, removePhotos, saveVehicleInspection, uploadPhoto } from '../lib/api';
 import { shrinkImage } from '../lib/image';
@@ -392,16 +393,8 @@ function CheckSummary({ r, onPpe, onEdit, onRefresh }: {
   r: VehicleInspection; onPpe?: () => void; onEdit?: () => void; onRefresh: () => Promise<void>;
 }) {
   const { checkItems, photoSlots, nameOf } = useMaster();
-  const [refreshing, setRefreshing] = useState(false);
-  const refresh = async () => {
-    setRefreshing(true);
-    try { await onRefresh(); } finally { setRefreshing(false); }
-  };
-  const refreshBtn = (
-    <button type="button" className="btn ghost sm sum-refresh" disabled={refreshing} onClick={refresh}>
-      <span className="ii" aria-hidden><RefreshIcon /></span>{refreshing ? 'กำลังโหลด…' : 'รีเฟรช'}
-    </button>
-  );
+  // the same "รีเฟรช" button as every other page
+  const refreshBtn = <RefreshButton className="sum-refresh" onRefresh={onRefresh} />;
   const total = checkItems.filter((i) => i.active).length;
   const itemName = new Map(checkItems.map((i) => [i.item_no, i.name]));
   const failed = Object.entries(r.results ?? {}).filter(([, v]) => v === 2).map(([k]) => ({

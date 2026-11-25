@@ -6,6 +6,7 @@
  * Today's view refreshes itself every 2 minutes (only while the page is open on today).
  */
 import { Suspense, lazy, useEffect, useState } from 'react';
+import { RefreshButton } from '../components/RefreshButton';
 import { FEATURES } from '../lib/features';
 import { today } from '../lib/utils';
 
@@ -38,7 +39,7 @@ export function AdminHomePage(_props: { go: (tab: string) => void }) {
         </div>
         <div className="row">
           <input type="date" aria-label="วันที่" value={date} max={today()} onChange={(e) => setDate(e.target.value || today())} />
-          <button className="btn ghost sm" onClick={refresh}>รีเฟรช</button>
+          <RefreshButton onRefresh={refresh} />
         </div>
       </section>
 

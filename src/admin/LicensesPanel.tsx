@@ -9,6 +9,7 @@ import { statusText, thaiDate, type LicenseRow } from '../lib/license';
 import { errMsg } from '../lib/utils';
 import { useMaster } from '../components/MasterContext';
 import { LicensePill } from '../pages/LicensePage';
+import { RefreshButton } from '../components/RefreshButton';
 
 type Filter = 'all' | 'expired' | 'expiring' | 'valid';
 
@@ -77,7 +78,7 @@ export function LicensesPage() {
             <input className="search" type="search" placeholder="ค้นหาชื่อ / รหัส / เลขที่" value={q}
               aria-label="ค้นหา" onChange={(e) => setQ(e.target.value)} />
             {filter !== 'all' && <button className="btn ghost sm" onClick={() => setFilter('all')}>แสดงทั้งหมด</button>}
-            <button className="btn ghost sm" onClick={load}>รีเฟรช</button>
+            <RefreshButton onRefresh={load} />
           </div>
         </div>
         {rows.length ? (

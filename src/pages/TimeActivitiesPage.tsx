@@ -9,6 +9,7 @@
  */
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { ConfirmButton } from '../components/ConfirmButton';
+import { RefreshButton } from '../components/RefreshButton';
 import { ReadOnlyField, thaiDay, useNow } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { CheckPicker, NoCheckYet, useTodayChecks } from '../components/TodayChecks';
@@ -44,7 +45,7 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
   const [day, setDay] = useState(today());
   useEffect(() => { if (today() !== day) setDay(today()); }, [now, day]);
 
-  const { checks, check, selId, setSelId } = useTodayChecks(day);
+  const { checks, check, selId, setSelId, reload: reloadChecks } = useTodayChecks(day);
   const [records, setRecords] = useState<TripActivity[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -95,7 +96,9 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
   }
 
   if (checks === null) return <div className="empty">กำลังโหลด…</div>;
-  if (!checks.length) return <NoCheckYet title="บันทึกก่อนออกงาน" then="ทะเบียนรถและ D-Man จะขึ้นที่นี่ให้เริ่มการทำงาน" goVehicle={goVehicle} />;
+  // "รีเฟรช": a teammate may have started / ended the work, or checked the vehicle, on another phone
+  const refresh = () => Promise.all([reloadChecks(), reload()]);
+  if (!checks.length) return <NoCheckYet title="บันทึกก่อนออกงาน" then="ทะเบียนรถและ D-Man จะขึ้นที่นี่ให้เริ่มการทำงาน" goVehicle={goVehicle} onRefresh={refresh} />;
 
   return (
     <>
@@ -108,7 +111,10 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
       ) : (<>
       {/* box 1: vehicle + D-Man, and the start of work */}
       <section className="panel">
-        <h2>บันทึกก่อนออกงาน</h2>
+        <div className="row spread head-row">
+          <h2 className="flush">บันทึกก่อนออกงาน</h2>
+          <RefreshButton onRefresh={refresh} />
+        </div>
         <CheckPicker checks={checks} selId={selId} onPick={setSelId} />
         <div className="form-head">
           <div className="fields c4">
@@ -118,7 +124,6 @@ export function TimeActivitiesPage({ sub, goVehicle }: { sub: 'work' | 'store'; 
             <ReadOnlyField label="D-Man" value={check ? nameOf(check.dman_id) : '–'} />
           </div>
         </div>
-        <p className="note flush-note">ทะเบียนรถและ D-Man มาจากการตรวจรถ · เวลาเริ่มงานบันทึกตอนกด "เริ่มการทำงาน"</p>
         {trip ? (
           <div className="work-started">▶ เริ่มการทำงานแล้วเมื่อ <b>{trip.start_time} น.</b></div>
         ) : (

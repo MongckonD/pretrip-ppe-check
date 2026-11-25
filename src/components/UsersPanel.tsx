@@ -4,7 +4,7 @@ import { createUser, deleteUser, listUsers, resetUserPassword, updateUser, type 
 import { errMsg } from '../lib/utils';
 import { ActiveSwitch, CfgHead } from './CfgUi';
 import { ROLE_LABEL, useMe } from './Auth';
-import { KeyIcon, AlertIcon } from './Icons';
+import { KeyIcon, AlertIcon, PersonAvatar } from './Icons';
 import { useMaster } from './MasterContext';
 import { useToast } from './Toast';
 
@@ -121,7 +121,7 @@ export function UsersPanel() {
           {pageRows.map((u) => (
             <div className={`user-item ${u.active ? '' : 'off'}`} key={u.id}>
               <div className="user-row">
-                <span className={`avatar ${u.role === 'admin' ? 'admin' : ''}`} aria-hidden>{nameOfAcc(u).slice(0, 1).toUpperCase()}</span>
+                <span className={`avatar person ${u.role === 'admin' ? 'admin' : ''}`} aria-hidden><PersonAvatar /></span>
                 <span className="user-row-name"><b>{nameOfAcc(u)}</b>{u.id === me?.id && <span className="note"> · คุณ</span>}</span>
                 <span className="mono user-row-code">{codeOf(u.employee_id) || '—'}</span>
                 <span className={`role-tag ${u.role}`}>{ROLE_LABEL[u.role]}</span>
@@ -157,7 +157,7 @@ export function UsersPanel() {
             {(() => { const u = openUser; return (<>
               <div className="row spread dlg-head">
                 <div className="user-top">
-                  <span className={`avatar ${u.role === 'admin' ? 'admin' : ''}`} aria-hidden>{nameOfAcc(u).slice(0, 1).toUpperCase()}</span>
+                  <span className={`avatar person ${u.role === 'admin' ? 'admin' : ''}`} aria-hidden><PersonAvatar /></span>
                   <div className="user-name">
                     <h2 className="flush">{nameOfAcc(u)}</h2>
                     <span className="note">{codeOf(u.employee_id) ? <>รหัสพนักงาน <span className="mono">{codeOf(u.employee_id)}</span></> : 'ยังไม่มีรหัสพนักงาน'}{u.id === me?.id && ' · คุณ'}</span>

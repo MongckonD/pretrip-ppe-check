@@ -8,6 +8,7 @@ import { ReadOnlyField, Seg, thaiDay, useNow } from '../components/Fields';
 import { useMaster } from '../components/MasterContext';
 import { CheckPicker, NoCheckYet, useTodayChecks } from '../components/TodayChecks';
 import { useToast } from '../components/Toast';
+import { RefreshButton } from '../components/RefreshButton';
 import { listPpeInspections, savePpeInspections } from '../lib/api';
 import type { PpeInspection, PpeItem, PpeResult } from '../lib/types';
 import { errMsg, today } from '../lib/utils';
@@ -32,7 +33,7 @@ export function PpePage({ goVehicle, goTime }: { goVehicle?: () => void; goTime?
   const [day, setDay] = useState(today());
   useEffect(() => { if (today() !== day) setDay(today()); }, [now, day]);
 
-  const { checks, check, selId, setSelId } = useTodayChecks(day);
+  const { checks, check, selId, setSelId, reload: reloadChecks } = useTodayChecks(day);
   const [records, setRecords] = useState<PpeInspection[]>([]);
   const [rows, setRows] = useState<Rows>({});
   const [saving, setSaving] = useState(false);
@@ -90,7 +91,9 @@ export function PpePage({ goVehicle, goTime }: { goVehicle?: () => void; goTime?
 
   if (checks === null) return <div className="empty">กำลังโหลด…</div>;
 
-  if (!checks.length) return <NoCheckYet title="ตรวจ PPE พนักงาน" then="รายชื่อทีมจะขึ้นที่นี่ให้ตรวจ PPE" goVehicle={goVehicle} />;
+  // "รีเฟรช": the team's PPE may have been saved / changed on another phone (not on the form: it keeps what is typed)
+  const refresh = () => Promise.all([reloadChecks(), reload()]);
+  if (!checks.length) return <NoCheckYet title="ตรวจ PPE พนักงาน" then="รายชื่อทีมจะขึ้นที่นี่ให้ตรวจ PPE" goVehicle={goVehicle} onRefresh={refresh} />;
 
   const saved = crew.filter((c) => records.some((r) => r.employee_id === c.id && r.plate === check?.plate));
   if (check && saved.length && editing !== check.id) {
@@ -99,7 +102,7 @@ export function PpePage({ goVehicle, goTime }: { goVehicle?: () => void; goTime?
         {checks.length > 1 && <section className="panel"><CheckPicker checks={checks} selId={selId} onPick={setSelId} /></section>}
         <PpeSummary plate={check.plate} dman={check.dman_id} crew={crew} items={items}
           records={records.filter((r) => r.plate === check.plate)}
-          onEdit={() => setEditing(check.id)} onTime={goTime} />
+          onEdit={() => setEditing(check.id)} onTime={goTime} onRefresh={refresh} />
       </>
     );
   }
@@ -147,9 +150,9 @@ export function PpePage({ goVehicle, goTime }: { goVehicle?: () => void; goTime?
 }
 
 /** Shown once the team's PPE is saved: who has everything and what is missing. PPE needs no admin approval. */
-function PpeSummary({ plate, dman, crew, items, records, onEdit, onTime }: {
+function PpeSummary({ plate, dman, crew, items, records, onEdit, onTime, onRefresh }: {
   plate: string; dman: string; crew: CrewMember[]; items: PpeItem[]; records: PpeInspection[];
-  onEdit: () => void; onTime?: () => void;
+  onEdit: () => void; onTime?: () => void; onRefresh: () => unknown;
 }) {
   const { nameOf } = useMaster();
   const rows = crew.map((c) => {
@@ -172,6 +175,7 @@ function PpeSummary({ plate, dman, crew, items, records, onEdit, onTime }: {
           <b>บันทึก PPE แล้ว</b>
           <span>{allOk ? 'ทุกคนในทีมมีอุปกรณ์ครบ' : notYet ? `ยังไม่ได้ตรวจ ${notYet} คน` : `มีอุปกรณ์ไม่ครบ ${notOk} คน`}</span>
         </div>
+        <RefreshButton className="sum-refresh" onRefresh={onRefresh} />
       </div>
 
       <h2 className="sum-title">สรุปผลการตรวจ PPE <span className={`pill ${allOk ? 'p' : 'f'}`}>{allOk ? 'ครบทุกคน' : 'ไม่ครบ'}</span></h2>

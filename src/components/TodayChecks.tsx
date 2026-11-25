@@ -6,6 +6,7 @@
  *   - the latest one is picked first
  *   - with several checks today, a row of buttons lets you switch vehicle
  */
+import { RefreshButton } from './RefreshButton';
 import { useCallback, useEffect, useState } from 'react';
 import { listVehicleInspections, type Me } from '../lib/api';
 import type { VehicleInspection } from '../lib/types';
@@ -70,12 +71,16 @@ export function CheckPicker({ checks, selId, onPick }: {
   );
 }
 
-export function NoCheckYet({ title, then, goVehicle }: { title: string; then: string; goVehicle?: () => void }) {
+export function NoCheckYet({ title, then, goVehicle, onRefresh }: { title: string; then: string; goVehicle?: () => void; onRefresh?: () => unknown }) {
   return (
     <section className="panel ppe-wait">
       <h2>{title}</h2>
       <p>วันนี้คุณยังไม่มีรถที่ตรวจแล้ว (รถที่คุณตรวจเอง หรือที่คุณอยู่ในทีม) — ตรวจรถและเลือกทีมงานที่แท็บ <b>ตรวจรถ</b> ก่อน แล้ว{then}</p>
-      {goVehicle && <button className="btn" onClick={goVehicle}>ไปตรวจรถ</button>}
+      <div className="row">
+        {goVehicle && <button className="btn" onClick={goVehicle}>ไปตรวจรถ</button>}
+        {/* a teammate may have just checked the vehicle on another phone */}
+        {onRefresh && <RefreshButton onRefresh={onRefresh} />}
+      </div>
     </section>
   );
 }
