@@ -17,5 +17,8 @@ export const FEATURES = {
   storeTimer: on(import.meta.env.VITE_FEATURE_STORE_TIMER),
 } as const;
 
-/** app version shown in the menu (from package.json) */
-export const APP_VERSION: string = __APP_VERSION__;
+/**
+ * app version shown in the menu and on the login page (from package.json), short form: 1.0.0 → "1.0", 1.0.1 → "1.0.1".
+ * 2026-11-25: set back to 1.0 before real use starts (the code is not rolled back, only the number) — count up once in use.
+ */
+export const APP_VERSION: string = __APP_VERSION__.replace(/\.0$/, '');
