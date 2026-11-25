@@ -246,7 +246,7 @@ export function DeliveryPlan({ date: pageDate }: { date: string }) {
           <input ref={fileRef} type="file" hidden accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); }} />
           {/* a file may hold other (future) days, so importing is allowed while viewing a past day */}
-          <button type="button" className="btn sm" disabled={busy} onClick={() => fileRef.current?.click()}>{busy && !pv ? 'กำลังอ่านไฟล์…' : 'นำเข้าไฟล์จาก SAP'}</button>
+          <button type="button" className="btn sm" disabled={busy} onClick={() => fileRef.current?.click()}>{busy && !pv ? 'กำลังอ่านไฟล์…' : 'นำเข้าไฟล์'}</button>
           {!locked && <button type="button" className="btn ghost sm" onClick={() => setAdding((a) => !a)}>＋ เพิ่มร้านค้า</button>}
           <button type="button" className="btn ghost sm" onClick={template}><span className="ii" aria-hidden><DownloadIcon /></span>ไฟล์ตัวอย่าง</button>
           {list.length > 0 && <button type="button" className="btn ghost sm" onClick={() => setOpen((o) => !o)}>{open ? 'ซ่อนรายการ' : 'แสดงรายการ'}</button>}

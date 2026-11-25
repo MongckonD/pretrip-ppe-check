@@ -188,9 +188,11 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
 
   async function onDefectPhoto(no: number, file: File | undefined) {
     if (!file) return;
+    // the photo is named after the vehicle: choose it first
+    if (!f.plate.trim()) { document.getElementById('v-plate')?.focus(); return toast('เลือกทะเบียนรถก่อนถ่ายรูป'); }
     setUploading(`item-${no}`);
     try {
-      const path = await uploadPhoto(await shrinkImage(file), f.date);
+      const path = await uploadPhoto(await shrinkImage(file), f.date, f.plate.trim(), `item${pad2(no)}`);
       dropFresh(f.defects[no]?.photo ?? undefined);
       setFresh((s) => new Set(s).add(path));
       setF((p) => ({ ...p, defects: { ...p.defects, [no]: { note: p.defects[no]?.note ?? '', photo: path } } }));
@@ -216,9 +218,10 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
 
   async function onPhoto(slot: string, file: File | undefined) {
     if (!file) return;
+    if (!f.plate.trim()) { document.getElementById('v-plate')?.focus(); return toast('เลือกทะเบียนรถก่อนถ่ายรูป'); }
     setUploading(slot);
     try {
-      const path = await uploadPhoto(await shrinkImage(file), f.date);
+      const path = await uploadPhoto(await shrinkImage(file), f.date, f.plate.trim(), slot);
       dropFresh(f.photos[slot]);
       setFresh((s) => new Set(s).add(path));
       setF((p) => ({ ...p, photos: { ...p.photos, [slot]: path } }));
@@ -341,7 +344,8 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
         })}
       </div>
 
-      <div className="section-head"><b>ภาพถ่ายรถ</b> <span className="note mono">{photoCount}/{photoSlots.length}</span></div>
+      <div className="section-head"><b>ภาพถ่ายรถ</b> <span className="note mono">{photoCount}/{photoSlots.length}</span>
+        {!f.plate.trim() && <span className="note"> · เลือกทะเบียนรถก่อน แล้วจึงถ่ายรูปได้</span>}</div>
       <div className="shots">
         {photoSlots.map((s) => {
           const path = f.photos[s.code];
@@ -350,9 +354,9 @@ function VehicleForm({ onSaved: setSummary, initial, onCancelEdit }: {
               <span>{s.name}</span>
               <div className="box">
                 {path && formUrls[path] ? <img src={formUrls[path]} alt={`ภาพ${s.name}`} /> :
-                  uploading === s.code ? 'กำลังอัปโหลด…' : path ? 'กำลังโหลด…' : 'ถ่ายรูป / เลือกรูป'}
+                  uploading === s.code ? 'กำลังอัปโหลด…' : path ? 'กำลังโหลด…' : f.plate.trim() ? 'ถ่ายรูป / เลือกรูป' : 'เลือกทะเบียนรถก่อน'}
                 <input type="file" accept="image/*" capture="environment" aria-label={`รูป${s.name}`}
-                  disabled={uploading !== null}
+                  disabled={uploading !== null || !f.plate.trim()}
                   onChange={(e) => { onPhoto(s.code, e.target.files?.[0]); e.target.value = ''; }} />
               </div>
               {path && <button type="button" className="btn danger sm" onClick={() => removeSlot(s.code)}>ลบรูป</button>}

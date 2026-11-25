@@ -317,8 +317,14 @@ function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<
 }
 const urlCache = new Map<string, string>();
 
-export async function uploadPhoto(blob: Blob, date: string) {
-  const path = `${date.slice(0, 7)}/${date}_${uuid()}.jpg`;
+/** same file name as the Worker: 2026-11/2026-11-25/ผข4600/20261125-0812_ผข4600_front_a1b2c3.jpg */
+export async function uploadPhoto(blob: Blob, _date: string, plate: string, slot: string) {
+  const p = plate.replace(/[^0-9A-Za-z\u0E00-\u0E7F-]/g, '').slice(0, 20);
+  if (!p) throw new Error('เลือกทะเบียนรถก่อนถ่ายรูป');
+  const now = new Date(Date.now() + 7 * 3_600_000).toISOString();
+  const day = now.slice(0, 10);
+  const rand = uuid().replace(/-/g, '').slice(0, 6);
+  const path = `${day.slice(0, 7)}/${day}/${p}/${day.replace(/-/g, '')}-${now.slice(11, 13)}${now.slice(14, 16)}_${p}_${slot}_${rand}.jpg`;
   await idb('readwrite', (s) => s.put(blob, path));
   return path;
 }

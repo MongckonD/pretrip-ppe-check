@@ -1,5 +1,5 @@
 /**
- * Delivery plan (ร้านค้าที่ต้องส่ง) + store timer (store_visits) + vehicle check rules + vehicle delete rules — end-to-end tests against the LOCAL Worker and LOCAL D1.
+ * Delivery plan (ร้านค้าที่ต้องส่ง) + store timer (store_visits) + vehicle check rules + photo names + vehicle delete rules — end-to-end tests against the LOCAL Worker and LOCAL D1.
  * Never touches the live database.
  *
  *   npm run test:delivery
@@ -431,6 +431,40 @@ async function vehicleCheckTests(staff) {
   check('the database refuses a second vehicle for one account (ONE_VEHICLE_A_DAY)', e.includes('ONE_VEHICLE_A_DAY'), e);
 }
 
+/** photo file names: day-time taken + vehicle + slot (uploads go to the LOCAL R2 and are deleted again) */
+async function photoTests(token) {
+  section('photo file names');
+  const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 0xff, 0xd9]);
+  const up = async (qs) => {
+    const r = await fetch(`${BASE}/api/photos?${qs}`, {
+      method: 'POST', body: jpg,
+      headers: { cookie: `__Host-pt_session=${token}`, 'content-type': 'image/jpeg', origin: BASE, 'x-requested-with': 'pretrip' },
+    });
+    return { st: r.status, j: await r.json().catch(() => null) };
+  };
+  const keys = [];
+  const now = new Date(Date.now() + 7 * 3600_000).toISOString();
+  const day = now.slice(0, 10);
+  let r = await up(`date=${TODAY}&plate=${encodeURIComponent('70 1234')}&slot=front`);
+  if (r.j?.key) keys.push(r.j.key);
+  const re = new RegExp(`^${day.slice(0, 7)}/${day}/701234/${day.replace(/-/g, '')}-\\d{4}_701234_front_[0-9a-f]{6}\\.jpg$`);
+  check('photo named month/day/vehicle/daytime_vehicle_slot_random', r.st === 201 && re.test(r.j?.key ?? ''), r);
+  r = await up(`date=${TODAY}&plate=${encodeURIComponent('70 1234')}&slot=item07`);
+  if (r.j?.key) keys.push(r.j.key);
+  check('a failed-item photo is named itemNN', r.st === 201 && /_701234_item07_[0-9a-f]{6}\.jpg$/.test(r.j?.key ?? ''), r);
+  r = await up(`date=${TODAY}&plate=ZT-NOPE&slot=front`);
+  check('unknown vehicle refused', r.st === 400, r);
+  r = await up(`date=${TODAY}&plate=${encodeURIComponent('70 1234')}&slot=../x`);
+  check('bad slot refused', r.st === 400, r);
+  r = await up(`date=${TODAY}`);
+  if (r.j?.key) keys.push(r.j.key);
+  check('an older page without plate still uploads (old name)', r.st === 201 && /^\d{4}-\d{2}\/\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}\.jpg$/.test(r.j?.key ?? ''), r);
+  const g = await fetch(`${BASE}/api/photos/${(keys[0] ?? '').split('/').map(encodeURIComponent).join('/')}`, { headers: { cookie: `__Host-pt_session=${token}` } });
+  check('a new-name photo can be opened again', g.status === 200, g.status);
+  const d = await api(token)('POST', '/api/photos/delete', { keys });
+  check('test photos deleted', d.st === 200 && (d.j?.deleted ?? []).length === keys.length, d);
+}
+
 /* --------------------------------------------------------------- run --------------------------------------------------------------- */
 
 async function main() {
@@ -444,7 +478,8 @@ async function main() {
   await startWorker();
 
   const admin = api(newSession('super1'));
-  const staff = api(newSession('staff1'));
+  const staffToken = newSession('staff1');
+  const staff = api(staffToken);
   // staff1 (EMP01) checks 70 1234 today, unless a check exists already (then it is left as it is)
   const had = sql(`SELECT id FROM vehicle_inspections WHERE inspect_date = ${q(TODAY)} AND vehicle_id = (SELECT id FROM vehicles WHERE plate = '70 1234')`);
   if (!had.length) {
@@ -465,6 +500,7 @@ async function main() {
   await deliveryTests(admin, staff);
   await timerTests(admin, staff, api(newSession('staff2')));
   await vehicleCheckTests(staff);
+  await photoTests(staffToken);
   await vehicleTests(admin);
 }
 

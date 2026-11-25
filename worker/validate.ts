@@ -101,8 +101,16 @@ export function obj(v: unknown, label: string): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
-/** R2 keys we issue look like 2026-11/2026-11-16_<uuid>.jpg */
-export const PHOTO_KEY_RE = /^\d{4}-\d{2}\/\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}\.(jpg|png|webp)$/;
+/**
+ * R2 keys we issue:
+ *   since 2026-11-25  2026-11/2026-11-25/ผข4600/20261125-0812_ผข4600_front_a1b2c3.jpg
+ *                     (month / day taken / vehicle / day-time taken (Thai) _ vehicle _ photo slot or itemNN _ random)
+ *   earlier           2026-11/2026-11-16_<uuid>.jpg (still valid: photos already saved keep working)
+ */
+export const PHOTO_KEY_RE =
+  /^\d{4}-\d{2}\/(?:\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}|\d{4}-\d{2}-\d{2}\/[0-9A-Za-z฀-๿-]{1,20}\/\d{8}-\d{4}_[0-9A-Za-z฀-๿-]{1,20}_[a-z0-9]{1,20}_[0-9a-f]{6})\.(jpg|png|webp)$/;
+/** the vehicle part of a photo name: the plate without spaces / dots (Thai letters, digits and "-" kept) */
+export const photoPlate = (p: string) => p.replace(/[^0-9A-Za-z฀-๿-]/g, '').slice(0, 20);
 
 export function photoKey(v: unknown): string {
   if (typeof v !== 'string' || !PHOTO_KEY_RE.test(v)) throw bad('รหัสรูปภาพไม่ถูกต้อง');

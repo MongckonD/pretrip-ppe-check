@@ -3,7 +3,7 @@ import { type Actor, requireRole, requireStaff } from './auth';
 import { HttpError, bad, conflict, forbidden, json, notFound, readJson } from './http';
 import {
   PHOTO_KEY_RE, bool, employeeId, isDate, isMonth, monthBounds, obj, optEmployeeId,
-  optMileage, nowTimeTH, photoKey, plate, reqDate, str, text, todayTH,
+  optMileage, nowTimeTH, photoKey, photoPlate, plate, reqDate, str, text, todayTH,
 } from './validate';
 
 export interface Env {
@@ -855,7 +855,26 @@ export async function uploadPhoto({ env, actor, req, url }: Ctx) {
   if (bytes.length > MAX_PHOTO_BYTES) throw new HttpError(413, 'รูปใหญ่เกิน 5 MB');
   const type = sniffImage(bytes);
   if (!type) throw new HttpError(415, 'รองรับเฉพาะรูป JPEG, PNG หรือ WebP');
-  const key = `${date.slice(0, 7)}/${date}_${crypto.randomUUID()}.${IMAGE_TYPES[type]}`;
+  // file name = when it was taken (Thai time, server clock) + which vehicle + which photo:
+  //   2026-11/2026-11-25/ผข4600/20261125-0812_ผข4600_front_a1b2c3.jpg   (6 random hex: two photos the same minute never clash)
+  // a page from before this change sends no plate / slot: the old name is used then
+  const plateIn = url.searchParams.get('plate');
+  const slotIn = url.searchParams.get('slot') ?? '';
+  let key: string;
+  if (plateIn) {
+    const veh = await findVehicleByPlate(env, plate(plateIn));
+    if (!veh) throw bad(`ยังไม่ได้ลงทะเบียนรถ ${plateIn} — เพิ่มได้ที่แท็บตั้งค่า`);
+    if (!/^(?:[a-z]{2,12}|item\d{2})$/.test(slotIn)) throw bad('ช่องรูปไม่ถูกต้อง');
+    const p = photoPlate(veh.plate);
+    if (!p) throw bad('ทะเบียนรถไม่ถูกต้อง');
+    const now = new Date(Date.now() + 7 * 3_600_000).toISOString(); // Thai time
+    const day = now.slice(0, 10);
+    const stamp = `${day.replace(/-/g, '')}-${now.slice(11, 13)}${now.slice(14, 16)}`;
+    const rand = [...crypto.getRandomValues(new Uint8Array(3))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    key = `${day.slice(0, 7)}/${day}/${p}/${stamp}_${p}_${slotIn}_${rand}.${IMAGE_TYPES[type]}`;
+  } else {
+    key = `${date.slice(0, 7)}/${date}_${crypto.randomUUID()}.${IMAGE_TYPES[type]}`;
+  }
   await env.PHOTOS.put(key, bytes, {
     httpMetadata: { contentType: type },
     customMetadata: { uploadedBy: actor.id },

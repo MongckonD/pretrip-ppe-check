@@ -205,8 +205,10 @@ export const listLicenses = () => call<{ rows: LicenseRow[]; warn_days: number; 
 export const licensePhotoUrl = (id: string) => `/api/licenses/${encodeURIComponent(id)}/photo`;
 
 /* ---------- photos ---------- */
-export async function uploadPhoto(blob: Blob, date: string) {
-  const r = await call<{ key: string }>('POST', `/api/photos?date=${encodeURIComponent(date)}`, undefined, blob);
+/** the server names the file: day-time taken + vehicle + photo slot (front / side … / itemNN for a failed item) */
+export async function uploadPhoto(blob: Blob, date: string, plate: string, slot: string) {
+  const qs = `date=${encodeURIComponent(date)}&plate=${encodeURIComponent(plate)}&slot=${encodeURIComponent(slot)}`;
+  const r = await call<{ key: string }>('POST', `/api/photos?${qs}`, undefined, blob);
   return r.key;
 }
 export async function removePhotos(paths: string[]) {
