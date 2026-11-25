@@ -66,7 +66,7 @@ function portInUse(port) {
 let worker = null;
 function startWorker() {
   return new Promise((resolve, reject) => {
-    worker = spawn(win ? 'npx.cmd' : 'npx', ['wrangler', 'dev', '--port', String(PORT)], { shell: win, stdio: ['ignore', 'pipe', 'pipe'] });
+    worker = spawn(win ? 'npx.cmd' : 'npx', ['wrangler', 'dev', '--port', String(PORT), '--local-upstream', `127.0.0.1:${PORT}`, '--upstream-protocol', 'http'], { shell: win, stdio: ['ignore', 'pipe', 'pipe'] });
     const timer = setTimeout(() => reject(new Error('wrangler dev did not start within 90 s')), 90_000);
     const onData = (d) => { if (String(d).includes('Ready on')) { clearTimeout(timer); resolve(); } };
     worker.stdout.on('data', onData);

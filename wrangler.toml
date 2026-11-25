@@ -1,7 +1,8 @@
 # Cloudflare config — Pre-Trip PPE Check
 # Worker ตัวเดียวเสิร์ฟทั้งหน้าเว็บ (dist/) และ API (/api/*)
 # deploy: npm run deploy
-name = "pretrip-ppe-check"
+# ชื่อ Worker (เดิม pretrip-ppe-check — เปลี่ยนเป็น d-trip เมื่อ 2026-11-25)
+name = "d-trip"
 main = "worker/index.ts"
 compatibility_date = "2026-11-01"
 

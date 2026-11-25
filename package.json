@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:store": "vite --mode store",
     "dev:cf": "vite --mode cloudflare",
-    "dev:api": "wrangler dev --port 8787",
+    "dev:api": "wrangler dev --port 8787 --local-upstream 127.0.0.1:8787 --upstream-protocol http",
     "build": "node tests/no-popups.mjs && tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",

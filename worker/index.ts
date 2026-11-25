@@ -242,6 +242,12 @@ async function handleApi(req: Request, env: Env, exec: ExecutionContext): Promis
 export default {
   async fetch(req: Request, env: Env, exec: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
+    // always HTTPS: the custom domain also answers plain http:// (workers.dev never did) — send it to https://
+    // (login cookies are Secure-only, and nothing should travel unencrypted); local development stays on http
+    if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) {
+      url.protocol = 'https:';
+      return Response.redirect(url.toString(), 301);
+    }
     if (!url.pathname.startsWith('/api/')) {
       return isStaticFile(url.pathname) ? serveStatic(req, env, exec) : servePage(req, env, exec);
     }
