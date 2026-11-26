@@ -54,3 +54,37 @@ bucket_name = "pretrip-driver-licenses"
 FEATURE_STORE_DELIVERY = "1"
 # store timer (จับเวลาร้านค้า, table store_visits): on since version 1.2.0
 FEATURE_STORE_TIMER = "1"
+
+# =====================================================================
+# STAGING (เว็บทดสอบก่อนขึ้นจริง): https://dtrip-test.heyrockydev.com
+#   Worker / ฐานข้อมูล / ที่เก็บรูป แยกจากเว็บจริงทั้งหมด — ทดลองอะไรก็ไม่กระทบข้อมูลจริง
+#   deploy: npm run deploy:staging · ฐานข้อมูล: npx wrangler d1 ... pretrip-ppe-staging --env staging
+# ค่าใน [env.staging] ต้องเขียนครบ (bindings / vars / routes ไม่สืบทอดจากด้านบน)
+# =====================================================================
+[env.staging]
+name = "d-trip-staging"
+workers_dev = false
+routes = [
+  { pattern = "dtrip-test.heyrockydev.com", custom_domain = true },
+]
+
+[env.staging.triggers]
+crons = ["0 20 * * *"]
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "pretrip-ppe-staging"
+database_id = "fdd0ffce-663e-4644-b0c9-ef442a92b834"   # region APAC
+migrations_dir = "cloudflare/migrations"
+
+[[env.staging.r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "pretrip-inspection-photos-staging"
+
+[[env.staging.r2_buckets]]
+binding = "LICENSES"
+bucket_name = "pretrip-driver-licenses-staging"
+
+[env.staging.vars]
+FEATURE_STORE_DELIVERY = "1"
+FEATURE_STORE_TIMER = "1"
