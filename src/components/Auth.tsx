@@ -46,7 +46,7 @@ function PasswordInput(props: {
   );
 }
 
-const PW_RULE = 'อย่างน้อย 8 ตัวอักษร และต้องไม่มีรหัสพนักงานอยู่ในรหัสผ่าน';
+const PW_RULE = 'อย่างน้อย 6 ตัวอักษร และห้ามใช้รหัสที่เดาง่าย เช่น 123456';
 
 export function LoginForm({ onDone, notice }: { onDone: (me: Me) => void; notice?: string }) {
   const [username, setUsername] = useState('');
@@ -140,9 +140,11 @@ export function ChangePasswordForm(props: { forced?: boolean; onDone: () => void
 
   const form = (
     <form className="login-form" onSubmit={submit}>
-      <PasswordInput label={props.forced ? 'รหัสผ่านชั่วคราว (ที่ได้รับ)' : 'รหัสผ่านปัจจุบัน'} value={current}
-        onChange={setCurrent} autoComplete="current-password" autoFocus />
-      <PasswordInput label="รหัสผ่านใหม่" value={next} onChange={setNext} autoComplete="new-password" />
+      {/* first sign-in: the password just used to sign in is not asked again */}
+      {!props.forced && (
+        <PasswordInput label="รหัสผ่านปัจจุบัน" value={current} onChange={setCurrent} autoComplete="current-password" autoFocus />
+      )}
+      <PasswordInput label="รหัสผ่านใหม่" value={next} onChange={setNext} autoComplete="new-password" autoFocus={props.forced} />
       <PasswordInput label="ยืนยันรหัสผ่านใหม่" value={confirm} onChange={setConfirm} autoComplete="new-password" />
       <span className="note">{PW_RULE} · เครื่องอื่นที่ login บัญชีนี้อยู่จะถูกออกจากระบบ</span>
       {error && <div className="form-error" role="alert">{error}</div>}
@@ -155,7 +157,7 @@ export function ChangePasswordForm(props: { forced?: boolean; onDone: () => void
   );
 
   if (props.forced) {
-    return <Card title="ตั้งรหัสผ่านใหม่" sub="บัญชีนี้ใช้รหัสผ่านชั่วคราว กรุณาตั้งรหัสผ่านของคุณเองก่อนใช้งาน">{form}</Card>;
+    return <Card title="ตั้งรหัสผ่านใหม่" sub="เข้าใช้งานครั้งแรก กรุณาตั้งรหัสผ่านของคุณเองก่อนใช้งาน">{form}</Card>;
   }
   return (
     <section className="panel pw-panel">

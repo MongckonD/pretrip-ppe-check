@@ -1,5 +1,5 @@
 /**
- * Delivery plan (ร้านค้าที่ต้องส่ง) + store timer (store_visits) + vehicle check rules + photo names + vehicle delete rules — end-to-end tests against the LOCAL Worker and LOCAL D1.
+ * Delivery plan (ร้านค้าที่ต้องส่ง) + store timer (store_visits) + vehicle check rules + photo names + first passwords + vehicle delete rules — end-to-end tests against the LOCAL Worker and LOCAL D1.
  * Never touches the live database.
  *
  *   npm run test:delivery
@@ -140,6 +140,10 @@ function cleanup() {
        DELETE FROM vehicle_inspections WHERE id IN ('zt-other-team', 'zt-timer-check');
        DELETE FROM vehicle_inspections WHERE vehicle_id IN (SELECT id FROM vehicles WHERE plate LIKE 'ZT-%');
        DELETE FROM vehicles WHERE plate LIKE 'ZT-%';
+       DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE employee_id LIKE 'ZT-%');
+       DELETE FROM user_consents WHERE user_id IN (SELECT id FROM users WHERE employee_id LIKE 'ZT-%');
+       DELETE FROM users WHERE employee_id LIKE 'ZT-%';
+       DELETE FROM employees WHERE id LIKE 'ZT-%';
        DELETE FROM sessions WHERE user_agent = ${q(UA)};`);
 }
 
@@ -425,6 +429,14 @@ async function vehicleCheckTests(staff) {
     r = await staff('POST', '/api/vehicle-inspections', { ...body(mine.plate, { mileage: '' }), id: mine.id, dman: 'EMP01' });
     check('… but a fix also needs the mileage', r.st === 400, r);
   }
+  // the team rule: only who saved a check, its D-Man or helpers may change it
+  r = await staff('POST', '/api/vehicle-inspections', { ...body('80-5678'), id: 'zt-other-team', dman: 'EMP03' });
+  check("another team cannot edit a check by its id (403)", r.st === 403, r);
+  r = await staff('POST', '/api/vehicle-inspections', { ...body('80-5678'), dman: 'EMP03' });
+  check("another team cannot overwrite a vehicle already checked today (403)", r.st === 403, r);
+  const tc = sql(`SELECT dman_id FROM vehicle_inspections WHERE id = 'zt-timer-check'`)[0];
+  r = await staff('POST', '/api/vehicle-inspections', { ...body('ZT-T1'), id: 'zt-timer-check', dman: tc?.dman_id, h1: 'EMP01' });
+  check('a helper of the team can fix the check (saved by someone else)', r.st === 200, r);
   let e = dbErr(`INSERT INTO vehicle_inspections (id, inspect_date, vehicle_id, dman_id, created_by) VALUES ('zt-vc-nomile', ${q(TODAY)}, 'zt-veh-c2', 'EMP04', NULL)`);
   check('the database refuses a check without mileage (MILEAGE_REQUIRED)', e.includes('MILEAGE_REQUIRED'), e);
   e = dbErr(`INSERT INTO vehicle_inspections (id, inspect_date, vehicle_id, mileage, dman_id, created_by) VALUES ('zt-vc-two', ${q(TODAY)}, 'zt-veh-c2', 1, 'EMP04', 'super1')`);
@@ -465,6 +477,64 @@ async function photoTests(token) {
   check('test photos deleted', d.st === 200 && (d.j?.deleted ?? []).length === keys.length, d);
 }
 
+/** first passwords set by an admin: simple allowed (123456), always "must change at first sign-in" */
+async function firstPasswordTests(admin) {
+  section('first passwords (admin-set, e.g. 123456)');
+  sql(`INSERT INTO employees (id, name, role, emp_code, active) VALUES ('ZT-EMP1', 'ทดสอบรหัสผ่าน', NULL, 'ZT9001', 1)`);
+  let r = await admin('POST', '/api/users', { employee_id: 'ZT-EMP1', role: 'user', password: '12345' });
+  check('a first password shorter than 6 is refused', r.st === 400, r);
+  r = await admin('POST', '/api/users', { employee_id: 'ZT-EMP1', role: 'user', password: '123456' });
+  check('admin can create an account with 123456', r.st === 201, r);
+  const id = r.j?.id;
+  const must = () => sql(`SELECT must_change_password m FROM users WHERE id = ${q(id)}`)[0]?.m;
+  check('… and it must change the password at first sign-in', must() === 1, must());
+  // sign in with 123456 → told to change it; the new one follows the full rules
+  const lr = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: BASE, 'x-requested-with': 'pretrip' },
+    body: JSON.stringify({ username: 'ZT9001', password: '123456' }),
+  });
+  const lj = await lr.json().catch(() => null);
+  check('sign-in with 123456 works and asks for a new password', lr.status === 200 && lj?.user?.must_change_password === true, { st: lr.status, lj });
+  const cookie = (lr.headers.get('set-cookie') ?? '').split(';')[0];
+  const chg = async (cur, next) => {
+    const x = await fetch(`${BASE}/api/auth/password`, {
+      method: 'POST', headers: { cookie, 'content-type': 'application/json', origin: BASE, 'x-requested-with': 'pretrip' },
+      body: JSON.stringify({ current_password: cur, new_password: next }),
+    });
+    return { st: x.status, j: await x.json().catch(() => null) };
+  };
+  r = await chg('', '123456');
+  check('first sign-in: the same password again is refused', r.st === 400 && /ซ้ำ|เดาง่าย/.test(r.j?.error ?? ''), r);
+  r = await chg('123456', 'ab12');
+  check('a password people choose needs 6+ characters', r.st === 400 && /6/.test(r.j?.error ?? ''), r);
+  r = await chg('123456', '654321');
+  check('… and cannot be an easy one (654321)', r.st === 400 && /เดาง่าย/.test(r.j?.error ?? ''), r);
+  r = await chg('', 'ZT9001');
+  check('first sign-in: new password set WITHOUT typing the temporary one again', r.st === 200 && must() === 0, r);
+  r = await chg('', 'Other-pass-55');
+  check('after that, a change needs the current password', r.st === 400 && /ปัจจุบัน/.test(r.j?.error ?? ''), r);
+  r = await chg('ZT9001', 'Zt-strong-77');
+  check('… a proper one is accepted and the forced change ends', r.st === 200 && must() === 0, r);
+  r = await admin('POST', `/api/users/${id}/reset-password`, { password: 'ZT9001' });
+  check('admin hands out the employee code as first password → must change at first sign-in', r.st === 200 && must() === 1, r);
+  r = await admin('POST', `/api/users/${id}/reset-password`, { password: '654321' });
+  check('admin reset with a simple first password → must change again', r.st === 200 && must() === 1, r);
+  r = await admin('POST', `/api/users/${id}/reset-password`, { password: 'Strong-Reset-88' });
+  check('admin reset with a strong password → used as it is (no forced change)', r.st === 200 && must() === 0, r);
+  sql(`INSERT INTO employees (id, name, role, emp_code, active) VALUES ('ZT-EMP2', 'ทดสอบรหัสผ่าน 2', NULL, 'ZT9002', 1)`);
+  sql(`INSERT INTO employees (id, name, role, emp_code, active) VALUES ('ZT-EMP3', 'ทดสอบรหัสผ่าน 3', NULL, 'ZT9003', 1)`);
+  r = await admin('POST', '/api/users', { employee_id: 'ZT-EMP3', role: 'user', password: '' });
+  const lr3 = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: BASE, 'x-requested-with': 'pretrip' },
+    body: JSON.stringify({ username: 'ZT9003', password: '123456' }),
+  });
+  const lj3 = await lr3.json().catch(() => null);
+  check('no password given → the account starts with 123456 and must change it', r.st === 201 && lr3.status === 200 && lj3?.user?.must_change_password === true, { r, st: lr3.status, lj3 });
+  r = await admin('POST', '/api/users', { employee_id: 'ZT-EMP2', role: 'user', password: 'Strong-First-77' });
+  const id2 = r.j?.id;
+  check('admin creates with a strong password → no forced change', r.st === 201 && sql(`SELECT must_change_password m FROM users WHERE id = ${q(id2)}`)[0]?.m === 0, r);
+}
+
 /* --------------------------------------------------------------- run --------------------------------------------------------------- */
 
 async function main() {
@@ -501,6 +571,7 @@ async function main() {
   await timerTests(admin, staff, api(newSession('staff2')));
   await vehicleCheckTests(staff);
   await photoTests(staffToken);
+  await firstPasswordTests(admin);
   await vehicleTests(admin);
 }
 

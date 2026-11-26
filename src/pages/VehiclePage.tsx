@@ -1,3 +1,4 @@
+import { isMyCheck } from '../components/TodayChecks';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notifyVehicleCheckChanged } from '../components/CheckStatus';
 import { useMe } from '../components/Auth';
@@ -78,7 +79,8 @@ export function VehiclePage({ goPpe }: { goPpe?: () => void }) {
     let alive = true;
     listVehicleInspections({ date: today() }).then((list) => {
       if (!alive) return;
-      const mine = list.filter((r) => !me || r.created_by === me.id)
+      // the team's check: one I saved, or one where I am the D-Man / a helper (same rule as PPE and work time)
+      const mine = list.filter((r) => isMyCheck(me, r))
         .sort((a, b) => (b.updated_at ?? b.inspect_time ?? '').localeCompare(a.updated_at ?? a.inspect_time ?? ''));
       const latest = mine[0];
       setSummary(latest ?? null);

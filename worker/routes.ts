@@ -458,10 +458,17 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
   // which row are we writing?
   let id: string;
   let isNew = false;
+  // who saved the check first (kept when the team changes it; the insert below then is a plain update for the database rules)
+  let owner: string | null = actor.id;
   if (reqId) {
-    const cur = await env.DB.prepare(`SELECT id, approved_at, inspect_date, inspect_time FROM vehicle_inspections WHERE id = ?1`)
-      .bind(reqId).first<{ id: string; approved_at: string | null; inspect_date: string; inspect_time: string | null }>();
+    const cur = await env.DB.prepare(
+      `SELECT vi.id, vi.approved_at, vi.inspect_date, vi.inspect_time, vi.created_by, vi.dman_id, vi.helper1_id, vi.helper2_id, v.plate
+         FROM vehicle_inspections vi JOIN vehicles v ON v.id = vi.vehicle_id WHERE vi.id = ?1`,
+    ).bind(reqId).first<CheckOwner & { id: string; approved_at: string | null; inspect_date: string; inspect_time: string | null; plate: string }>();
     if (!cur) throw notFound('ไม่พบบันทึกนี้ (อาจถูกลบไปแล้ว)');
+    // only the team of that check may change it (who saved it, its D-Man or helpers)
+    assertMyCheck(actor, cur, cur.plate);
+    owner = cur.created_by;
     // editing keeps the original date and time
     date = cur.inspect_date;
     time = cur.inspect_time;
@@ -473,8 +480,10 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
     id = reqId;
   } else {
     const cur = await env.DB.prepare(
-      `SELECT id, approved_at FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2`,
-    ).bind(date, vehicle.id).first<{ id: string; approved_at: string | null }>();
+      `SELECT id, approved_at, created_by, dman_id, helper1_id, helper2_id FROM vehicle_inspections WHERE inspect_date = ?1 AND vehicle_id = ?2`,
+    ).bind(date, vehicle.id).first<CheckOwner & { id: string; approved_at: string | null }>();
+    // this vehicle is already checked today: only its team may send it again (another team cannot overwrite it)
+    if (cur) { assertMyCheck(actor, cur, vehicle.plate); owner = cur.created_by; }
     if (cur?.approved_at) throw conflict('รายการนี้หัวหน้าอนุมัติแล้ว แก้ไขไม่ได้ (ต้องยกเลิกอนุมัติก่อน)');
     if (!cur && vehicle.active !== 1) throw bad(`รถ ${vehicle.plate} ปิดใช้งานแล้ว เปิดใช้งานใหม่ได้ที่แท็บตั้งค่า`);
     // one vehicle a day: someone who already checked (or is in the crew of) another vehicle today cannot check a second one
@@ -519,14 +528,14 @@ export async function saveVehicleInspection({ env, actor, req, exec }: Ctx) {
     env.DB.prepare(
       `INSERT INTO vehicle_inspections
          (id, inspect_date, inspect_time, vehicle_id, mileage, dman_id, helper1_id, helper2_id, note, created_by, updated_by)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?11, ?10)
        ON CONFLICT (id) DO UPDATE SET
          inspect_date = excluded.inspect_date, inspect_time = excluded.inspect_time,
          vehicle_id = excluded.vehicle_id, mileage = excluded.mileage, dman_id = excluded.dman_id,
          helper1_id = excluded.helper1_id, helper2_id = excluded.helper2_id, note = excluded.note,
          rejected_at = NULL, rejected_by = NULL, reject_reason = '',
          updated_by = excluded.updated_by, updated_at = ${NOW_SQL}`,
-    ).bind(id, date, time, vehicle.id, mileage, dman, h1, h2, note, actor.id),
+    ).bind(id, date, time, vehicle.id, mileage, dman, h1, h2, note, actor.id, owner),
     env.DB.prepare(`DELETE FROM vehicle_inspection_results WHERE inspection_id = ?1`).bind(id),
     env.DB.prepare(
       `INSERT INTO vehicle_inspection_results (inspection_id, item_no, result, remark, photo_r2_key)

@@ -14,7 +14,7 @@
 import { accountIdFor, empCode } from './auth-routes';
 import { requireRole, type Role } from './auth';
 import { bad, json, readJson } from './http';
-import { hashPassword, passwordProblem } from './password';
+import { DEFAULT_PASSWORD, firstPasswordProblem, hashPassword, mustChangeFirst } from './password';
 import { NOW_SQL, audit, type Ctx } from './routes';
 
 const MAX_ROWS = 500;
@@ -47,15 +47,6 @@ function parseYes(v: string): boolean | null {
   return null;
 }
 
-/** 10 characters, no look-alikes (0/O, 1/l/I), always letters + digits */
-function tempPassword(): string {
-  const letters = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ', digits = '23456789', all = letters + digits;
-  const r = crypto.getRandomValues(new Uint32Array(10));
-  const out = [...r].map((n, i) => (i === 0 ? letters : i === 1 ? digits : all)[n % (i === 0 ? letters.length : i === 1 ? digits.length : all.length)]);
-  // shuffle so the letter / digit are not always first
-  for (let i = out.length - 1; i > 0; i--) { const j = r[i] % (i + 1); [out[i], out[j]] = [out[j], out[i]]; }
-  return out.join('');
-}
 
 /** POST /api/import/employees { rows, commit } */
 export async function importEmployees({ env, actor, req }: Ctx) {
@@ -120,7 +111,8 @@ export async function importEmployees({ env, actor, req }: Ctx) {
         account = 'new';
         const id = accountIdFor(code);
         if (accountIds.has(id)) { account = 'error'; errors.push('มีบัญชีภายในชื่อเดียวกันอยู่แล้ว — ติดต่อผู้พัฒนาระบบ'); }
-        const p = pw ? passwordProblem(pw, id) : null;
+        // a first password (must be changed at first sign-in): simple allowed, e.g. 123456
+        const p = pw ? firstPasswordProblem(pw) : null;
         if (p) { account = 'error'; errors.push(`รหัสผ่าน: ${p}`); }
       }
     }
@@ -161,13 +153,14 @@ export async function importEmployees({ env, actor, req }: Ctx) {
     }
     if (r.account === 'new') {
       const id = accountIdFor(r.code);
+      // no password in the file → the default first password (123456), changed at first sign-in
       const given = s(src.password);
-      const pw = given || tempPassword();
-      if (!given) r.temp_password = pw;
+      const pw = given || DEFAULT_PASSWORD;
       stmts.push(env.DB.prepare(
         `INSERT INTO users (id, display_name, role, employee_id, password_hash, must_change_password, password_changed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 1, ${NOW_SQL})`,
-      ).bind(id, r.name, r.access, empId, await hashPassword(pw)));
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ${NOW_SQL})`,
+        // a generated password is temporary (always changed); a given one only when it is simple (e.g. 123456)
+      ).bind(id, r.name, r.access, empId, await hashPassword(pw), mustChangeFirst(pw, id)));
       stmts.push(audit(env, actor, 'create', 'users', id, { role: r.access, employee_id: empId, import: true }));
     }
   }

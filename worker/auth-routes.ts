@@ -4,7 +4,7 @@ import {
   readCookie, requireRole, sessionCookie, throttleLogin, type Actor, type Role,
 } from './auth';
 import { HttpError, bad, conflict, json, notFound, readJson } from './http';
-import { burnPasswordCheck, hashPassword, passwordProblem, sha256Hex, verifyPassword } from './password';
+import { DEFAULT_PASSWORD, burnPasswordCheck, firstPasswordProblem, hashPassword, mustChangeFirst, passwordProblem, sha256Hex, verifyPassword } from './password';
 import { empLabel, type Ctx, type Env } from './routes';
 import { bool, optEmployeeId, str } from './validate';
 
@@ -31,6 +31,14 @@ function reqUserId(v: unknown): string {
 }
 function reqPassword(pw: unknown, id: string): string {
   const problem = passwordProblem(pw, id);
+  if (problem) throw bad(problem);
+  return pw as string;
+}
+/** a first password set by an admin: simple allowed (e.g. 123456) — a simple one must be changed at first sign-in */
+function reqFirstPassword(pwIn: unknown): string {
+  // left empty → the default first password (123456), changed at first sign-in
+  const pw = typeof pwIn === 'string' && pwIn !== '' ? pwIn : DEFAULT_PASSWORD;
+  const problem = firstPasswordProblem(pw);
   if (problem) throw bad(problem);
   return pw as string;
 }
@@ -195,9 +203,13 @@ export async function changePassword({ env, actor, req }: Ctx) {
   const b = await readJson(req);
   const cur = typeof b.current_password === 'string' ? b.current_password : '';
   const row = await env.DB.prepare(`SELECT password_hash FROM users WHERE id = ?1`).bind(actor.id).first<{ password_hash: string }>();
-  if (!row || !(await verifyPassword(cur, row.password_hash))) throw bad('รหัสผ่านปัจจุบันไม่ถูกต้อง');
+  if (!row) throw bad('รหัสผ่านปัจจุบันไม่ถูกต้อง');
+  // first sign-in with a password the admin handed out: they just typed it to sign in, so it is not asked again.
+  // Any other change needs the current password.
+  const firstChange = actor.must_change_password && !cur;
+  if (!firstChange && !(await verifyPassword(cur, row.password_hash))) throw bad('รหัสผ่านปัจจุบันไม่ถูกต้อง');
   const pw = reqPassword(b.new_password, actor.id);
-  if (pw === cur) throw bad('รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม');
+  if (firstChange ? await verifyPassword(pw, row.password_hash) : pw === cur) throw bad('รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม');
   const hash = await hashPassword(pw);
   await env.DB.batch([
     env.DB.prepare(
@@ -255,13 +267,13 @@ export async function createUser({ env, actor, req }: Ctx) {
   // the account id is internal only; made from the employee code so it is unique and readable in logs
   const id = accountIdFor(e.code);
   const display = str(b.display_name, 'ชื่อที่แสดง', 100) || e.name;
-  const pw = reqPassword(b.password, id);
+  const pw = reqFirstPassword(b.password);
   const exists = await env.DB.prepare(`SELECT id FROM users WHERE id = ?1`).bind(id).first();
   if (exists) throw conflict(`มีบัญชีภายในชื่อ ${id} อยู่แล้ว — ติดต่อผู้พัฒนาระบบ`);
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO users (id, display_name, role, employee_id, password_hash, must_change_password) VALUES (?1, ?2, ?3, ?4, ?5, 0)`,
-    ).bind(id, display, role, emp, await hashPassword(pw)),
+      `INSERT INTO users (id, display_name, role, employee_id, password_hash, must_change_password) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    ).bind(id, display, role, emp, await hashPassword(pw), mustChangeFirst(pw, id)),
     audit(env, actor.id, 'create', 'users', id, { role, display_name: display, employee_id: emp }),
   ]);
   return json({ id, emp_code: e.code }, 201);
@@ -338,19 +350,19 @@ export async function deleteUser({ env, actor, params, exec }: Ctx) {
   return json({ ok: true });
 }
 
-/** Admin sets a new password for the user; it is used as-is (no forced change). Their other sessions end. */
+/** Admin sets a new password for the user (simple allowed; a simple one must be changed at the next sign-in). Their other sessions end. */
 export async function resetPassword({ env, actor, req, params }: Ctx) {
   requireRole(actor, 'admin');
   const id = reqUserId(decodeURIComponent(params[0]));
   const cur = await env.DB.prepare(`SELECT id FROM users WHERE id = ?1`).bind(id).first();
   if (!cur) throw notFound('ไม่พบผู้ใช้นี้');
   const b = await readJson(req);
-  const pw = reqPassword(b.password, id);
+  const pw = reqFirstPassword(b.password);
   await env.DB.batch([
     env.DB.prepare(
-      `UPDATE users SET password_hash = ?2, must_change_password = 0, failed_logins = 0, locked_until = NULL,
+      `UPDATE users SET password_hash = ?2, must_change_password = ?3, failed_logins = 0, locked_until = NULL,
          password_changed_at = ${NOW_SQL} WHERE id = ?1`,
-    ).bind(id, await hashPassword(pw)),
+    ).bind(id, await hashPassword(pw), mustChangeFirst(pw, id)),
     env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?1 AND token_hash <> ?2`).bind(id, actor.session),
     audit(env, actor.id, 'password_reset', 'users', id),
   ]);

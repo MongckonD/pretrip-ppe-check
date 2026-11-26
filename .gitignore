@@ -11,3 +11,6 @@ dist
 
 # Local-only Worker secrets/vars (dev login bypass)
 .dev.vars
+
+# account import sheet (employee names / codes, first passwords) — never commit
+accounts-import*.csv

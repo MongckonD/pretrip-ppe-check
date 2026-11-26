@@ -53,7 +53,7 @@ export function UsersPanel() {
     setBusy(true);
     try {
       await createUser(form);
-      toast(`เพิ่มบัญชีแล้ว — แจ้งรหัสพนักงาน ${codeOf(form.employee_id)} และรหัสผ่านให้เจ้าตัว`);
+      toast(`เพิ่มบัญชีแล้ว — แจ้งรหัสพนักงาน ${codeOf(form.employee_id)} และรหัสผ่าน${form.password ? '' : ' 123456'} ให้เจ้าตัว`);
       setForm({ display_name: '', role: 'user', employee_id: '', password: '' });
       setPage(0); // the new account is the newest: first page
       await reload();
@@ -99,7 +99,7 @@ export function UsersPanel() {
     if (!resetFor) return;
     const id = resetFor;
     const u = users.find((x) => x.id === id);
-    await run(() => resetUserPassword(id, resetPw), `ตั้งรหัสผ่านใหม่ให้ ${u ? nameOfAcc(u) : id} แล้ว — ใช้รหัสนี้เข้าสู่ระบบได้เลย`);
+    await run(() => resetUserPassword(id, resetPw), `ตั้งรหัสผ่านใหม่ให้ ${u ? nameOfAcc(u) : id} แล้ว${resetPw ? '' : ' (123456 — ต้องเปลี่ยนตอนเข้าครั้งแรก)'}`);
     setResetFor(null); setResetPw('');
   }
 
@@ -237,8 +237,8 @@ export function UsersPanel() {
         )}
         {resetFor === u.id && (
           <form className="row user-reset" onSubmit={doReset}>
-            <input type="text" aria-label="รหัสผ่านใหม่" placeholder="รหัสผ่านใหม่ (8 ตัวขึ้นไป)" value={resetPw}
-              onChange={(e) => setResetPw(e.target.value)} autoComplete="off" required />
+            <input type="text" aria-label="รหัสผ่านใหม่" placeholder="รหัสผ่านใหม่ (เว้นว่าง = 123456)" value={resetPw}
+              onChange={(e) => setResetPw(e.target.value)} autoComplete="off" />
             <button className="btn sm" type="submit">บันทึก</button>
             <button className="btn ghost sm" type="button" onClick={() => setResetFor(null)}>ยกเลิก</button>
           </form>
@@ -270,7 +270,7 @@ export function UsersPanel() {
           </label>
           <label>รหัสผ่าน
             <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="8 ตัวขึ้นไป" autoComplete="off" required />
+              placeholder="เว้นว่าง = 123456" autoComplete="off" />
           </label>
         </div>
         <div className="row spread mt-s">
