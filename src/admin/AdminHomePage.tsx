@@ -18,7 +18,8 @@ const thDay = (d: string) => new Date(`${d}T00:00`).toLocaleDateString('th-TH', 
 const hhmm = (d: Date) => d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
 export function AdminHomePage(_props: { go: (tab: string) => void }) {
-  const [date, setDate] = useState(today());
+  // always today (other days: the date box of each section)
+  const [date] = useState(today());
   // bumping it reloads the store times (refresh button / every 2 minutes on today)
   const [refreshKey, setRefreshKey] = useState(0);
   const [updated, setUpdated] = useState(new Date());
@@ -38,7 +39,6 @@ export function AdminHomePage(_props: { go: (tab: string) => void }) {
           <span className="note">อัปเดตล่าสุด {hhmm(updated)} น.{date === today() && ' · รีเฟรชเองทุก 2 นาที'}</span>
         </div>
         <div className="row">
-          <input type="date" aria-label="วันที่" value={date} max={today()} onChange={(e) => setDate(e.target.value || today())} />
           <RefreshButton onRefresh={refresh} />
         </div>
       </section>

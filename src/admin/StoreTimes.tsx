@@ -105,7 +105,7 @@ export function StoreTimes({ refreshKey }: { refreshKey: number }) {
           </label>
           <label className="rp-field">
             <span className="ro-label">ร้าน (ชื่อ / รหัส)</span>
-            <input type="search" placeholder="เช่น เจ๊หมวย หรือ C10021" value={draft.store} onChange={(e) => set('store', e.target.value)}
+            <input type="search" placeholder="ชื่อร้าน / รหัส" value={draft.store} onChange={(e) => set('store', e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') search(); }} />
           </label>
         </div>
